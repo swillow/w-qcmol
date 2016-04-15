@@ -8,12 +8,17 @@
 #include "Molecule.hpp"
 #include "Integrals.hpp"
 
+
+namespace willow { namespace qcmol {
+
+
 class MP2 {
 public:
 
   MP2 (const vector<Atom>& atoms,
        const BasisSet& bs,
-       const Integrals& ints);
+       const Integrals& ints,
+       const bool l_print = true);
 
 protected:
   int nocc;
@@ -39,6 +44,9 @@ protected:
   double*   mo_ints ();
 
 };
+
+
+}  } // namespace willow::qcmol
 
 
 #endif

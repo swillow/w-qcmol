@@ -1,19 +1,21 @@
 #include "RHF.hpp"
 #include "MP2.hpp"
-//#include "Timer.hpp"
+
+
+
+namespace willow { namespace qcmol {
+
 
 #define MINDEX(i,a,j,b,nocc,nvir)  ( ( ((i)*(nvir) + (a))*(nocc) + (j))*(nvir) + (b) ) 
 
 
 MP2::MP2 (const vector<Atom>& atoms,
 	  const BasisSet& bs,
-	  const Integrals& ints)
+	  const Integrals& ints,
+	  const bool l_print)
 {
   
-  //Timer timer;
-  //timer.start("RHF ");
-  RHF rhf (atoms, bs, ints);
-  //timer.end();
+  RHF rhf (atoms, bs, ints, l_print);
 
   ao_tei    = ints.TEI;
 
@@ -35,10 +37,12 @@ MP2::MP2 (const vector<Atom>& atoms,
   eval = rhf.eig_solver.eigenvalues();
   Cmat = rhf.eig_solver.eigenvectors();
 
-  cout << "nmo " << nmo << endl;
-  cout << "naocc " << naocc << endl;
-  cout << "navir " << navir << endl;
-
+  if (l_print) {
+    cout << "nmo " << nmo << endl;
+    cout << "naocc " << naocc << endl;
+    cout << "navir " << navir << endl;
+  }
+  
   //
   // save (moi moa | moj mob)
   // E(2) = sum_{i,j,a,b} {2 (ia | jb)(ia | jb) - (ia|jb)(ib|ja)}
@@ -65,10 +69,8 @@ MP2::MP2 (const vector<Atom>& atoms,
   auto mfos  =  0.5*fos;
   
   // MO INTS (ia|jb)
-  //timer.start ("MO INTS");
   mo_tei = mo_ints();
-  //timer.end();
-
+  
   // 
   // T(im,am|jm,bm)
   // 2*(im,am|jm,bm) - (im,bm|jm,am)
@@ -109,8 +111,10 @@ MP2::MP2 (const vector<Atom>& atoms,
     }  // jm
   }
 
-  cout << "EMP2     " << emp2 << endl;
+  if (l_print)
+    cout << "EMP2     " << emp2 << endl;
 
 }
 
 
+}  }  // namespace willow::qcmol

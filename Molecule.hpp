@@ -1,15 +1,25 @@
-#ifndef MOLECULE_HPP_INCLUDED
-#define MOLECULE_HPP_INCLUDED 1
+#ifndef W_MOLECULE_HPP
+#define W_MOLECULE_HPP
 
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <vector>
 #include <libint2.hpp>
-//#include <libint2/atom.h>
+
 
 using namespace std;
 using namespace libint2;
+
+
+namespace willow { namespace qcmol {
+
+
+struct QAtom {
+  double charge;
+  double x, y, z;
+};
+
 
 inline vector<Atom> read_geometry(const string& filename) {
   
@@ -83,5 +93,11 @@ inline int compute_ncore (const vector<Atom>& atoms)
   return ncore;
   
 }
+
+
+
+}   } // namespace willow::qcmol
+
+
 
 #endif

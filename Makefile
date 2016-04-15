@@ -17,36 +17,27 @@ HOME = .
 
 CFLAGS = -O3 -ffast-math    -march=native -std=c++11 $(LIBINT2INCLUDES)  
 #CFLAGS = -g   -march=native -std=c++11 $(LIBINT2INCLUDES)  
-#LIBS =  -L$(LIBINT2PATH)/lib -lint2 -larmadillo -lblas -llapack 
-#LIBS =  -L$(LIBINT2PATH)/lib -lint2 -lopenblas
 LIBS =  -L$(LIBINT2PATH)/lib -lint2  -larmadillo -lblas -llapack
 
-#SRC = shellfuncs.cc Integrals.cc EigenSolver.cc RHF.cc \
-#      RHFGrad.cc obara-saika.cc mp2.cc mp2ints.cc mp2grad.cc  cphf.cc \
-#      main.cc
+SRC = Integrals.cc RHF.cc mp2ints.cc MP2.cc esp.cc 
 
-SRC = Integrals.cc RHF.cc RHFGrad.cc mp2ints.cc MP2.cc esp.cc cphf.cc main.cc
+QCMOL_OBJ=$(SRC:.cc=.o)
 
-COBJ=$(SRC:.cc=.o)
-
-#.C.o :
-#	$(CXX) -fPIC $(FLAGS) $(OPT) -c $< -o $@
 .cc.o :
 	$(CXX) $(CFLAGS) -c $< -o $@
 
-.f90.o :
-	$(FC) $(FFLAGS) -c $< -o $@
-
-all	: $(EXECUTABLE) 
+all	: libwqcmol.a $(EXECUTABLE) 
 
 
-$(EXECUTABLE) : $(COBJ)
-	$(CXX)   $(FLAGS) -o  $(EXECUTABLE) $(COBJ) $(FOBJ) $(LIBS) 
+libwqcmol.a : $(QCMOL_OBJ)
+	$(AR) cr libwqcmol.a $(QCMOL_OBJ)
 
-hartree-fock++.x : hartree-fock++.o
-	$(CXX)   $(FLAGS) -o  hartree-fock++.x hartree-fock++.o  $(LIBS) -lpthread
+
+$(EXECUTABLE) : main.o libwqcmol.a
+	$(CXX)   $(FLAGS) -o  $(EXECUTABLE) main.o libwqcmol.a $(LIBS) 
+
 
 clean:
-	rm *.o 
+	rm *.o libwqcmol.a qcmol.x
 
 # DO NOT DELETE

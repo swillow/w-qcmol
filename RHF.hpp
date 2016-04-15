@@ -6,12 +6,20 @@
 #include "EigenSolver.hpp"
 #include "Integrals.hpp"
 
+
+
+namespace willow { namespace qcmol {
+
+
+
 class RHF
 {
 public:
+  
   RHF(const vector<Atom>& atoms,
       const BasisSet& bs,
-      const Integrals& ints);
+      const Integrals& ints,
+      const bool l_print = true);
 
   arma::mat densityMatrix (const int nocc);
   arma::mat energyWeightDensityMatrix (const int nocc);
@@ -23,5 +31,10 @@ public:
 };
 
 extern arma::mat g_matrix (double* TEI, arma::mat& D);
+
+
+
+} }  // namespace willow::qcmol
+
 
 #endif

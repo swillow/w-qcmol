@@ -1,8 +1,9 @@
 #include "RHF.hpp"
 #include "diis.hpp"
-//#include "Integrals.hpp"
-//#include "Molecule.hpp"
-//#include "Matrix.hpp"
+
+
+namespace willow { namespace qcmol {
+
 
 
 arma::mat g_matrix (double* TEI, arma::mat& Dm)
@@ -84,6 +85,48 @@ arma::mat g_matrix (double* TEI, arma::mat& Dm)
 
 
 
+arma::mat compute_soad (const vector<Atom>& atoms)
+{
+  // compute number of atomic orbitals
+  size_t nao = 0;
+  for (const auto& atom : atoms) {
+    const auto Z = atom.atomic_number;
+    if (Z == 1 || Z == 2)
+      nao += 1;
+    else if (Z <= 10)
+      nao += 5;
+    else
+      throw "SOAD with Z > 10 is not yet supported ";
+  }
+
+  arma::mat Dm (nao, nao);
+  Dm.zeros();
+
+  size_t ao_offset = 0; // first AO of this atom
+  for(const auto& atom: atoms) {
+    const auto Z = atom.atomic_number;
+    if (Z == 1 || Z == 2) { // H, He
+      Dm (ao_offset, ao_offset) = Z; // all electrons go to the 1s
+      ao_offset += 1;
+    }
+    else if (Z <= 10) {
+      Dm(ao_offset, ao_offset) = 2; // 2 electrons go to the 1s
+      Dm(ao_offset+1, ao_offset+1) = (Z == 3) ? 1 : 2; // Li? only 1 electron in 2s, else 2 electrons
+      // smear the remaining electrons in 2p orbitals
+      const double num_electrons_per_2p = (Z > 4) ? (double)(Z - 4)/3 : 0;
+      for(auto xyz=0; xyz!=3; ++xyz)
+        Dm(ao_offset+2+xyz, ao_offset+2+xyz) = num_electrons_per_2p;
+      ao_offset += 5;
+    }
+  }
+
+  return Dm; //
+    
+}
+
+
+
+
 double electronic_HF_energy (arma::mat& Dm, arma::mat& Hm, arma::mat& Fm)
 {// See Eq. (3.184) from Szabo and Ostlund
 
@@ -96,43 +139,45 @@ double electronic_HF_energy (arma::mat& Dm, arma::mat& Hm, arma::mat& Fm)
       Ehf += 0.5*Dm(i,j)*(Hm(i,j) + Fm(i,j));
   
   return Ehf;
+  
 }
 
 
 
 RHF::RHF (const vector<Atom>& atoms,
 	  const BasisSet& bs,
-	  const Integrals& ints)
+	  const Integrals& ints,
+	  const bool l_print)
 {
   // 
   E_nuc = compute_nuclear_repulsion_energy (atoms);
   //
   auto nocc = num_electrons(atoms)/2;
 
-  // Create Shells Centered on Atomic Positions
-  //auto shells  = bs.sh_list;
-  
   // -- Core Guess
   arma::mat Hm    = ints.Tm + ints.Vm;
   const auto nbf  = ints.SmInvh.n_rows; 
   const auto nmo  = ints.SmInvh.n_cols; 
 
   arma::mat Dm(nbf,nbf);
-  Dm.zeros();
+  arma::mat Fm(nbf,nbf);
   
-  {// Hcore
-    eig_solver.compute (ints.SmInvh, Hm);
+  Dm.zeros();
+  Fm.zeros();
+  
+  {// use SOAD to guess density matrix
+    arma::mat Dm_min = compute_soad (atoms);
+    BasisSet  bs_min ("STO-3G", atoms);
+
+    Fm = Hm + compute_2body_fock_general (bs, Dm_min, bs_min, true);
+    eig_solver.compute (ints.SmInvh, Fm);
     Dm = densityMatrix(nocc);
   }
-
-  // pre-compute data for Schwartz bounds
-  auto Km = ints.Km;
 
   // ********************
   // SCF Loop
   // ********************
   
-  arma::mat Fm = Hm;
   DIIS diis (ints.Sm, ints.SmInvh, Fm);
   
   // compute HF energy
@@ -154,8 +199,14 @@ RHF::RHF (const vector<Atom>& atoms,
     auto Dm_last = Dm;
 
     // Build a New Fock Matrix
+
+    if (ints.l_eri_direct) {
+      Fm = Hm + compute_2body_fock(bs, Dm, ints.Km);
+    }
+    else {
+      Fm = Hm + g_matrix(ints.TEI, Dm);
+    }
     
-    Fm = Hm + g_matrix(ints.TEI, Dm);
     Fm = diis.getF (Fm, Dm);
 
     eig_solver.compute (ints.SmInvh, Fm);
@@ -175,13 +226,15 @@ RHF::RHF (const vector<Atom>& atoms,
       }
     */
 
-  //  printf (" %02d %20.12f %20.12f %20.12f %20.12f\n",
-  //  	    iter, E_hf, E_hf+E_nuc, E_diff, rmsd);
+    if (l_print) {
+      printf (" %02d %20.12f %20.12f %20.12f %20.12f\n",
+	      iter, E_hf, E_hf+E_nuc, E_diff, rmsd);
+    }
+    
   } while ( (fabs(E_diff) > conv) && (iter < maxiter));
 
-  cout << "EHF " << E_hf << "  " << E_hf + E_nuc << endl;
-
-  // return ehf;
+  if (l_print) 
+    cout << "EHF " << E_hf << "  " << E_hf + E_nuc << endl;
 
 }
 
@@ -216,4 +269,6 @@ arma::mat RHF::densityMatrix (const int nocc)
 }
 
 
+
+}  }  // namespace willow::qcmol
 

@@ -4,6 +4,11 @@
 #include <cassert>
 #include <armadillo>
 
+
+
+namespace willow { namespace qcmol {
+
+
 class EigenSolver
 {
 public:
@@ -65,5 +70,9 @@ protected:
   arma::vec m_eig_vals;
   arma::mat m_eig_vecs;
 };
+
+
+
+} } // namespace willow::qcmol
 
 #endif

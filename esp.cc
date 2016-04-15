@@ -5,12 +5,18 @@
 // : calculates partial atomic charges that fit
 //   the quantum mechanical electrostatic potential on the selected grid points
 //
+
+namespace willow { namespace qcmol {
+
+
+
 ESP::ESP (const vector<Atom>& atoms,
 	  const BasisSet& bs,
-	  const Integrals& ints)
+	  const Integrals& ints,
+	  const bool l_print)
 {
 
-  RHF rhf (atoms, bs, ints);
+  RHF rhf (atoms, bs, ints, l_print);
   const auto nocc = num_electrons(atoms)/2;
   const arma::mat Dm = rhf.densityMatrix(nocc);
 
@@ -18,10 +24,13 @@ ESP::ESP (const vector<Atom>& atoms,
   
   esp_esp (atoms, bs, Dm);
 
-  vector<double> qf = esp_fit (atoms);
+  m_qf = esp_fit (atoms);
+  
+  if (l_print) {
+    for (auto i = 0; i < atoms.size(); i++)
+      cout << "ESP " << i+1 << "  " << m_qf(i) << endl;
+  }
 
-  for (auto i = 0; i < atoms.size(); i++)
-    cout << "ESP " << i+1 << "  " << qf[i] << endl;
   
 }
 
@@ -105,7 +114,7 @@ void ESP::esp_esp (const vector<Atom>& atoms,
 }
 		     
 
-vector<double> ESP::esp_fit (const vector<Atom>& atoms)
+arma::vec ESP::esp_fit (const vector<Atom>& atoms)
 {
 
   // set up matrix of linear coefficients
@@ -173,7 +182,8 @@ vector<double> ESP::esp_fit (const vector<Atom>& atoms)
 
   arma::mat am_inv = am.i();
   
-  vector<double> qf(natoms);
+  arma::vec qf(natoms);
+  qf.zeros();
   
   for (auto i = 0; i < natoms; ++i) {
     auto sum = 0.0;
@@ -182,7 +192,7 @@ vector<double> ESP::esp_fit (const vector<Atom>& atoms)
     //for (auto j = 0; j < atoms.size(); ++j) {
       sum = sum + am_inv(i,j)*bv(j);
     }
-    qf[i] = sum;
+    qf(i) = sum;
     //cout << " qf " << sum << endl;
   }
 
@@ -286,3 +296,6 @@ void ESP::esp_grid (const vector<Atom>& atoms)
       }
 
 }
+
+
+} } // namespace willow::qcmol

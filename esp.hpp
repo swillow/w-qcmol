@@ -7,10 +7,24 @@
 #include "Integrals.hpp"
 
 
+namespace willow { namespace qcmol {
+
+
 class ESP
 {
+  
+public:
+  ESP (const vector<Atom>& atoms,
+       const BasisSet& bs,
+       const Integrals& ints,
+       const bool l_print = true);
+
+  arma::vec get_atomic_chages () { return m_qf; };
+  
 private:
 
+  arma::vec m_qf;
+  
   struct Grid {
     double x, y, z;
     double val;
@@ -24,13 +38,13 @@ private:
 		 const arma::mat& Dm);
   
   void esp_grid (const vector<Atom>& atoms);
-  vector<double> esp_fit (const vector<Atom>& atoms);
-  
-public:
-  ESP (const vector<Atom>& atoms,
-       const BasisSet& bs,
-       const Integrals& ints);
+  arma::vec esp_fit (const vector<Atom>& atoms);
   
 };
+
+
+
+} } // namespace willow::qcmol
+
 
 #endif

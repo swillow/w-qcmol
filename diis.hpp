@@ -4,6 +4,10 @@
 #include <armadillo>
 #include <vector>
 
+
+namespace willow { namespace qcmol {
+
+
 class DIIS {
 
 public:
@@ -100,5 +104,9 @@ private:
   vector<arma::vec> ErrList_;
   
 };
+
+
+}  } // namespace willow::qcmol
+
 
 #endif

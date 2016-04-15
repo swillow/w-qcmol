@@ -1,39 +1,47 @@
 
 #include <iostream>
+#include "Molecule.hpp"// struct QAtom
 #include "Integrals.hpp"
+
+
+
+namespace willow { namespace qcmol {
 
 
 static arma::mat compute_linear_dependence (arma::mat& Sm);
 
 template <Operator obtype>
 arma::mat compute_1body_ints (const BasisSet& bs,
-			      const vector<Atom>& atoms = std::vector<Atom>());
+			      const vector<Atom>& atoms = vector<Atom>(),
+			      const vector<QAtom>& Q_atoms = vector<QAtom>() );
 
 
 arma::mat compute_schwartz_ints (const BasisSet& bs);
 
+
 arma::mat compute_shellblock_norm(const BasisSet& obs,
 				  const arma::mat& A);
+
 
 double* compute_2body_ints (const BasisSet&bs,
 			    const arma::mat& Km);
 
 
 Integrals::Integrals (const vector<Atom>& atoms,
-		      const BasisSet& bs)
+		      const BasisSet& bs,
+		      const vector<QAtom>& Q_atoms)
 {
 
   libint2::initialize ();
 
   // Compute Overlap Integrals
-  // cout << "Overlap Integrals " <<endl;
   Sm = compute_1body_ints<Operator::overlap> (bs);
 
   // Compute Kinetic Integrals
   Tm = compute_1body_ints<Operator::kinetic> (bs);
   
   // Compute Nuclear Attraction Integrals
-  Vm = compute_1body_ints<Operator::nuclear> (bs, atoms);
+  Vm = compute_1body_ints<Operator::nuclear> (bs, atoms, Q_atoms);
 
   // Sinvh_
   SmInvh = compute_linear_dependence (Sm);
@@ -41,14 +49,21 @@ Integrals::Integrals (const vector<Atom>& atoms,
   Km = compute_schwartz_ints (bs); 
 
   // Two
-  TEI = compute_2body_ints (bs, Km);
+  l_eri_direct = true;
 
+  if (bs.nbf() < 200) {
+    l_eri_direct = false;
+    TEI = compute_2body_ints (bs, Km);
+  }
+
+  
 }
 
 
 template <Operator obtype>
 arma::mat compute_1body_ints (const BasisSet& bs,
-			      const vector<Atom>& atoms) 
+			      const vector<Atom>& atoms,
+			      const vector<QAtom>& Q_atoms) 
 {
   const auto nbf     = bs.nbf();
   const auto nshells = bs.size();
@@ -66,6 +81,14 @@ arma::mat compute_1body_ints (const BasisSet& bs,
 	            {{atom.x, atom.y, atom.z}}} );
     }
 
+    if (Q_atoms.size() > 0) {
+
+      for (const auto& q_atom : Q_atoms) {
+	q.push_back ( {q_atom.charge,
+	      {{q_atom.x, q_atom.y, q_atom.z}} } );
+      }
+    }
+    
     engine.set_params (q);
   }
   
@@ -326,7 +349,7 @@ double* compute_2body_ints (const BasisSet& bs,
     }
   }
 
-  cout << " JUMP NUM " << ncount << endl;
+  //cout << " JUMP NUM " << ncount << endl;
 
   return result;
 
@@ -336,8 +359,7 @@ double* compute_2body_ints (const BasisSet& bs,
 
 
 arma::mat compute_2body_fock (const BasisSet& bs,
-			      const arma::mat& D, // density matrix
-			      double precision,
+			      const arma::mat& Dm, // density matrix
 			      const arma::mat& Schwartz)
 {
 
@@ -348,10 +370,15 @@ arma::mat compute_2body_fock (const BasisSet& bs,
   Gm.zeros();
     
   // matrix of norms of shell blocks
-  arma::mat D_shblk_norm = compute_shellblock_norm (bs, D);
+  arma::mat D_shblk_norm = compute_shellblock_norm (bs, Dm);
   
   // Construct the 2-electron repulsion integrals engine
-  libint2::TwoBodyEngine<libint2::Coulomb> engine(bs.max_nprim(), bs.max_l(), 0);
+  libint2::Engine engine(Operator::coulomb,
+			 bs.max_nprim(),
+			 bs.max_l(),
+			 0);
+
+  const auto precision = numeric_limits<double>::epsilon();
   engine.set_precision (precision);
   
   auto shell2bf = bs.shell2bf();
@@ -379,6 +406,8 @@ arma::mat compute_2body_fock (const BasisSet& bs,
 
 	const auto s4_max = (s1 == s3) ? s2 : s3;
 	for (auto s4 = 0; s4 <= s4_max; ++s4)  {
+	  auto bf4_first = shell2bf[s4];
+	  auto nbf4      = bs[s4].size();
 	  
 	  const auto Dnorm1234 = max(D_shblk_norm(s1,s4),
 				     max(D_shblk_norm(s2,s4),
@@ -387,11 +416,6 @@ arma::mat compute_2body_fock (const BasisSet& bs,
 	  if (Dnorm1234 * Schwartz(s1,s2) * Schwartz(s3,s4) < precision)
 	    continue;
 
-	  auto bf4_first = shell2bf[s4];
-	  auto nbf4      = bs[s4].size();
-
-	  //* num_ints_computed += nbf1*nbf2*nbf3*nbf4;
-
 	  // compute the permutational degeneracy
 	  // of the given shell set
 	  auto s12_deg = (s1 == s2) ? 1.0 : 2.0;
@@ -399,7 +423,9 @@ arma::mat compute_2body_fock (const BasisSet& bs,
 	  auto s12_34_deg = (s1 == s3) ? (s2 == s4 ? 1.0: 2.0) : 2.0;
 	  auto s1234_deg = s12_deg*s34_deg*s12_34_deg;
 
-	  const auto* buf = engine.compute (bs[s1], bs[s2], bs[s3], bs[s4]);
+	  //const auto* buf = engine.compute (bs[s1], bs[s2], bs[s3], bs[s4]);
+	  const auto* buf = engine.compute2<Operator::coulomb,BraKet::xx_xx,0>
+	    (bs[s1], bs[s2], bs[s3], bs[s4]);
 	  
 	  for (auto f1 = 0, f1234 = 0; f1 != nbf1; ++f1) {
 	    const auto bf1 = f1 + bf1_first;
@@ -417,12 +443,12 @@ arma::mat compute_2body_fock (const BasisSet& bs,
 
 		  const auto value_scal_by_deg = value * s1234_deg;
 		  
-		  Gm(bf1,bf2) += D(bf3,bf4) * value_scal_by_deg;
-		  Gm(bf3,bf4) += D(bf1,bf2) * value_scal_by_deg;
-		  Gm(bf1,bf3) -= 0.25*D(bf2,bf4) * value_scal_by_deg;
-		  Gm(bf2,bf4) -= 0.25*D(bf1,bf3) * value_scal_by_deg;
-		  Gm(bf1,bf4) -= 0.25*D(bf2,bf3) * value_scal_by_deg;
-		  Gm(bf2,bf3) -= 0.25*D(bf1,bf4) * value_scal_by_deg;
+		  Gm(bf1,bf2) += Dm(bf3,bf4) * value_scal_by_deg;
+		  Gm(bf3,bf4) += Dm(bf1,bf2) * value_scal_by_deg;
+		  Gm(bf1,bf3) -= 0.25*Dm(bf2,bf4) * value_scal_by_deg;
+		  Gm(bf2,bf4) -= 0.25*Dm(bf1,bf3) * value_scal_by_deg;
+		  Gm(bf1,bf4) -= 0.25*Dm(bf2,bf3) * value_scal_by_deg;
+		  Gm(bf2,bf3) -= 0.25*Dm(bf1,bf4) * value_scal_by_deg;
 		}
 	      }
 	    }
@@ -432,13 +458,130 @@ arma::mat compute_2body_fock (const BasisSet& bs,
     }
   }
   
-  arma::mat GG = 0.5* (Gm + Gm.t());
+  // Symmetrize the result and return
+  
+  return 0.25* (Gm + Gm.t()); 
+  
+}
+
+
+arma::mat compute_2body_fock_general (const BasisSet& bs,
+				      const arma::mat& Dm, // density matrix
+				      const BasisSet& Dm_bs,
+				      bool  Dm_is_diagonal)
+{
+
+  const auto nbf     = bs.nbf();
+  const auto nshells = bs.size();
+  const auto nbf_Dm  = Dm_bs.nbf();
+  const auto nshells_Dm = Dm_bs.size();
+
+  assert( (Dm.n_cols == Dm.n_rows) && (Dm.n_cols == nbf_Dm) );
+  
+  arma::mat Gm (nbf, nbf);
+  
+  Gm.zeros();
+    
+  // matrix of norms of shell blocks
+
+  const auto precision = numeric_limits<double>::epsilon();
+  // Construct the 2-electron repulsion integrals engine
+  libint2::Engine engine (Operator::coulomb,
+			  max(bs.max_nprim(),Dm_bs.max_nprim()),
+			  max(bs.max_l(), Dm_bs.max_l()),
+			  0);
+
+  engine.set_precision (precision);
+  
+  auto shell2bf    = bs.shell2bf();
+  auto shell2bf_Dm = Dm_bs.shell2bf();
+
+  // loop over permutationally-unique set of shells
+  for (auto s1 = 0; s1 != nshells; ++s1) {
+    auto bf1_first = shell2bf[s1];
+    auto nbf1      = bs[s1].size();
+    
+    for (auto s2 = 0; s2 <= s1; ++s2) {
+      auto bf2_first = shell2bf[s2];
+      auto nbf2      = bs[s2].size();
+      
+      for (auto s3 = 0; s3 < nshells_Dm; ++s3) {
+	auto bf3_first = shell2bf_Dm[s3];
+	auto nbf3      = Dm_bs[s3].size();
+
+	const auto s4_begin = Dm_is_diagonal ? s3 : 0;
+	const auto s4_fence = Dm_is_diagonal ? s3+1 : nshells_Dm;
+	
+	for (auto s4 = s4_begin; s4 != s4_fence; ++s4)  {
+	  auto bf4_first = shell2bf_Dm[s4];
+	  auto nbf4      = Dm_bs[s4].size();
+	  
+	  // compute the permutational degeneracy
+	  // of the given shell set
+	  auto s12_deg = (s1 == s2) ? 1.0 : 2.0;
+
+	  if (s3 >= s4) {
+	    auto s34_deg = (s3 == s4) ? 1.0 : 2.0;
+	    auto s1234_deg = s12_deg*s34_deg;
+	    
+	    //const auto* buf_J = engine.compute (bs[s1], bs[s2],
+	    //					Dm_bs[s3], Dm_bs[s4]);
+	    const auto* buf_J = engine.compute2<Operator::coulomb,BraKet::xx_xx,0>
+	      (bs[s1], bs[s2], Dm_bs[s3], Dm_bs[s4]);
+	  
+	    for (auto f1 = 0, f1234 = 0; f1 != nbf1; ++f1) {
+	      const auto bf1 = f1 + bf1_first;
+	      for (auto f2 = 0; f2 != nbf2; ++f2) {
+		const auto bf2 = f2 + bf2_first;
+		for (auto f3 = 0; f3 != nbf3; ++f3) {
+		  const auto bf3 = f3 + bf3_first;
+		  for (auto f4 = 0; f4 != nbf4; ++f4, ++f1234) {
+		    const auto bf4 = f4 + bf4_first;
+		  
+		    const auto value = buf_J[f1234];
+		    const auto value_scal_by_deg = value * s1234_deg;
+
+		    Gm(bf1,bf2) += 2.0*Dm(bf3,bf4)*value_scal_by_deg;
+		  
+		  }
+		}
+	      }
+	    } // f1
+
+	    const auto* buf_K = engine.compute2<Operator::coulomb,BraKet::xx_xx,0>
+	      (bs[s1], Dm_bs[s3], bs[s2], Dm_bs[s4]);
+
+	    for (auto f1 = 0, f1234 = 0; f1 != nbf1; ++f1) {
+	      const auto bf1 = f1 + bf1_first;
+	      for (auto f3 = 0; f3 != nbf3; ++f3) {
+		const auto bf3 = f3 + bf3_first;
+		for (auto f2 = 0; f2 != nbf2; ++f2) {
+		  const auto bf2 = f2 + bf2_first;
+		  for (auto f4 = 0; f4 != nbf4; ++f4, ++f1234) {
+		    const auto bf4 = f4 + bf4_first;
+		  
+		    const auto value = buf_K[f1234];
+		    const auto value_scal_by_deg = value * s12_deg;
+
+		    Gm(bf1,bf2) -= Dm(bf3,bf4)*value_scal_by_deg;
+		    
+		  }
+		}
+	      }
+	    } // f1
+	    
+	  } // if (s3 >= s4)
+	}
+      }
+    }
+  }
   
   // Symmetrize the result and return
   
-  return GG;
-	  
+  return 0.25*(Gm + Gm.t());
+  
 }
+
 
 
 arma::mat compute_shellblock_norm (const BasisSet& bs,
@@ -467,3 +610,6 @@ arma::mat compute_shellblock_norm (const BasisSet& bs,
   return Ash;
   
 }
+
+
+} } // namespace willow::qcmol

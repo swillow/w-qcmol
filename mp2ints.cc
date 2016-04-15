@@ -1,6 +1,10 @@
 #include "RHF.hpp"
 #include "MP2.hpp"
 
+
+namespace willow { namespace qcmol {
+
+
 // (ia|jb) = (bj|ai)
 // store (ia <= jb)
 double* MP2::mo_ints ()
@@ -723,4 +727,7 @@ double* MP2::mo_ints ()
 
 }
 
+
+
+}  }  // namespace willow::qcmol
 
