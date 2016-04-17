@@ -32,8 +32,6 @@ Integrals::Integrals (const vector<Atom>& atoms,
 		      const vector<QAtom>& Q_atoms)
 {
 
-  libint2::initialize ();
-
   // Compute Overlap Integrals
   Sm = compute_1body_ints<Operator::overlap> (bs);
 

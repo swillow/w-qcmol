@@ -25,6 +25,9 @@ int main (int argc, char *argv[])
   
   try {
     // Initialize molecule
+
+    libint2::initialize ();
+      
     const auto filename = (argc > 1) ? argv[1] : "h2o.xyz";
 
     vector<Atom> atoms = read_geometry (filename);
@@ -41,7 +44,8 @@ int main (int argc, char *argv[])
     //RHF rhf (atoms,bs,ints, l_print);
     //MP2 mp2 (atoms,bs,ints, l_print);
     ESP esp (atoms, bs, ints);
-    
+
+    libint2::finalize ();
 
   } // end of try block;
   

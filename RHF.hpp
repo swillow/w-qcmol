@@ -24,6 +24,8 @@ public:
   arma::mat densityMatrix (const int nocc);
   arma::mat energyWeightDensityMatrix (const int nocc);
 
+  double energy () { return (E_nuc + E_hf);};
+  
   EigenSolver eig_solver;
   
   double E_nuc;
