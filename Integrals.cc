@@ -1,8 +1,8 @@
-
-#include <iostream>
-#include "Molecule.hpp"// struct QAtom
 #include "Integrals.hpp"
+#include <iostream>
 
+using namespace std;
+using namespace libint2;
 
 
 namespace willow { namespace qcmol {

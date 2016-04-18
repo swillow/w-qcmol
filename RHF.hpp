@@ -16,10 +16,11 @@ class RHF
 {
 public:
   
-  RHF(const vector<Atom>& atoms,
-      const BasisSet& bs,
+  RHF(const std::vector<libint2::Atom>& atoms,
+      const libint2::BasisSet& bs,
       const Integrals& ints,
-      const bool l_print = true);
+      const bool l_print = true,
+      const std::vector<QAtom>& atoms_Q = std::vector<QAtom>() );
 
   arma::mat densityMatrix (const int nocc);
   arma::mat energyWeightDensityMatrix (const int nocc);

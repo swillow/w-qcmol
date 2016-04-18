@@ -2,6 +2,8 @@
 #include "MP2.hpp"
 
 
+using namespace std;
+using namespace libint2;
 
 namespace willow { namespace qcmol {
 
@@ -12,10 +14,11 @@ namespace willow { namespace qcmol {
 MP2::MP2 (const vector<Atom>& atoms,
 	  const BasisSet& bs,
 	  const Integrals& ints,
-	  const bool l_print)
+	  const bool l_print,
+	  const vector<QAtom>& atoms_Q)
 {
   
-  RHF rhf (atoms, bs, ints, l_print);
+  RHF rhf (atoms, bs, ints, l_print, atoms_Q);
 
   ao_tei    = ints.TEI;
 

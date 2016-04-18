@@ -1,9 +1,47 @@
 #include "RHF.hpp"
 #include "diis.hpp"
 
+using namespace std;
+using namespace libint2;
 
 namespace willow { namespace qcmol {
 
+
+static double compute_nuclear_repulsion_energy (const vector<Atom>& atoms,
+						const vector<QAtom>& atoms_Q)
+{
+  auto enuc = 0.0;
+  
+  for (auto i = 0; i < atoms.size(); ++i) {
+    double qi = static_cast<double> (atoms[i].atomic_number);
+    for (auto j = i+1; j < atoms.size(); ++j) {
+      auto xij = atoms[i].x - atoms[j].x;
+      auto yij = atoms[i].y - atoms[j].y;
+      auto zij = atoms[i].z - atoms[j].z;
+      auto r2 = xij*xij + yij*yij + zij*zij;
+      auto r = sqrt(r2);
+      double qj = static_cast<double> (atoms[j].atomic_number);
+      
+      enuc += qi*qj / r;
+    }
+
+    
+    for (auto j = 0; j < atoms_Q.size(); ++j) {
+      auto xij = atoms[i].x - atoms_Q[j].x;
+      auto yij = atoms[i].y - atoms_Q[j].y;
+      auto zij = atoms[i].z - atoms_Q[j].z;
+      auto r2 = xij*xij + yij*yij + zij*zij;
+      if (r2 > 0.01) { // to avoid the overlapped Qs
+	auto r = sqrt(r2);
+	double qj = atoms_Q[j].charge;
+	enuc += qi*qj / r;
+      }
+    }
+  }
+
+  return enuc;
+  
+}
 
 
 arma::mat g_matrix (double* TEI, arma::mat& Dm)
@@ -147,10 +185,11 @@ double electronic_HF_energy (arma::mat& Dm, arma::mat& Hm, arma::mat& Fm)
 RHF::RHF (const vector<Atom>& atoms,
 	  const BasisSet& bs,
 	  const Integrals& ints,
-	  const bool l_print)
+	  const bool l_print,
+	  const vector<QAtom>& atoms_Q )
 {
   // 
-  E_nuc = compute_nuclear_repulsion_energy (atoms);
+  E_nuc = compute_nuclear_repulsion_energy (atoms, atoms_Q);
   //
   auto nocc = num_electrons(atoms)/2;
 

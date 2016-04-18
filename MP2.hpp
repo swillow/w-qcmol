@@ -15,10 +15,11 @@ namespace willow { namespace qcmol {
 class MP2 {
 public:
 
-  MP2 (const vector<Atom>& atoms,
-       const BasisSet& bs,
+  MP2 (const std::vector<libint2::Atom>& atoms,
+       const libint2::BasisSet& bs,
        const Integrals& ints,
-       const bool l_print = true);
+       const bool l_print = true,
+       const std::vector<QAtom>& atoms_Q = std::vector<QAtom> ());
 
 protected:
   int nocc;

@@ -6,6 +6,9 @@
 //   the quantum mechanical electrostatic potential on the selected grid points
 //
 
+using namespace std;
+using namespace libint2;
+
 namespace willow { namespace qcmol {
 
 
@@ -13,10 +16,11 @@ namespace willow { namespace qcmol {
 ESP::ESP (const vector<Atom>& atoms,
 	  const BasisSet& bs,
 	  const Integrals& ints,
-	  const bool l_print)
+	  const bool l_print,
+	  const vector<QAtom>& atoms_Q)
 {
 
-  RHF rhf (atoms, bs, ints, l_print);
+  RHF rhf (atoms, bs, ints, l_print, atoms_Q); 
   const auto nocc = num_electrons(atoms)/2;
   const arma::mat Dm = rhf.densityMatrix(nocc);
 

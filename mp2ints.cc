@@ -13,7 +13,7 @@ double* MP2::mo_ints ()
   const auto nmod  = nbf%5;
 
   auto result = new double[nints];
-  fill (result, result+nints,0.0);
+  std::fill (result, result+nints,0.0);
 
   arma::cube ao_ijk (nbf, nbf, nbf);
   arma::mat  ao_ij  (nbf, nbf);

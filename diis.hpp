@@ -100,8 +100,8 @@ private:
   arma::mat SmInvh_; // Half-inverse Overlap Matrix
   arma::mat FmOld_;
   
-  vector<arma::mat> FmList_;
-  vector<arma::vec> ErrList_;
+  std::vector<arma::mat> FmList_;
+  std::vector<arma::vec> ErrList_;
   
 };
 

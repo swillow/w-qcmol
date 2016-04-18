@@ -4,14 +4,14 @@
 #include <vector>
 #include <libint2.hpp>
 #include <armadillo>
-#include "Molecule.hpp"
-
-
-using namespace std;
-using namespace libint2; // BasisSet, Atom
 
 
 namespace willow { namespace qcmol {
+
+struct QAtom {
+  double charge;
+  double x, y, z;
+};
 
 
 #define INDEX(i,j) ( (i >= j) ? (((i)*((i)+1)/2) + (j)) : (((j)*((j)+1)/2) + (i)))
@@ -20,8 +20,9 @@ namespace willow { namespace qcmol {
 class Integrals {
 public:
   // Constructor
-  Integrals (const vector<Atom>& atoms, const BasisSet& bs,
-	     const vector<QAtom>& Q_atoms=vector<QAtom>() );
+  Integrals (const std::vector<libint2::Atom>& atoms,
+	     const libint2::BasisSet& bs,
+	     const std::vector<QAtom>& atoms_Q=std::vector<QAtom>() );
   
   // Destructor
   ~Integrals () { if ( ! l_eri_direct) delete [] TEI;}
@@ -37,16 +38,16 @@ public:
   
 };
 
-extern arma::mat compute_shellblock_norm(const BasisSet& obs,
+extern arma::mat compute_shellblock_norm(const libint2::BasisSet& obs,
 					 const arma::mat& A);
 
-extern arma::mat compute_2body_fock (const BasisSet& bs,
+extern arma::mat compute_2body_fock (const libint2::BasisSet& bs,
 				     const arma::mat& D,
 				     const arma::mat& Schwartz);
 
-extern arma::mat compute_2body_fock_general (const BasisSet& bs,
+extern arma::mat compute_2body_fock_general (const libint2::BasisSet& bs,
 					     const arma::mat& Dm,
-					     const BasisSet& Dm_bs,
+					     const libint2::BasisSet& Dm_bs,
 					     bool Dm_is_diagonal=false);
 
 
