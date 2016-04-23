@@ -18,7 +18,7 @@
 
 using namespace std;
 using namespace libint2;
-using namespace willow::qcmol;
+using namespace willow;
 
 int main (int argc, char *argv[]) 
 {
@@ -33,20 +33,20 @@ int main (int argc, char *argv[])
     
     const auto filename = (argc > 1) ? argv[1] : "h2o.xyz";
 
-    vector<Atom> atoms = read_geometry (filename);
+    vector<Atom> atoms = qcmol::read_geometry (filename);
     
 
     // Create Basis Set
     libint2::Shell::do_enforce_unit_normalization(false);
-    BasisSet bs  ("aug-cc-pVDZ", atoms);
+    libint2::BasisSet bs  ("aug-cc-pVDZ", atoms);
     
     
-    Integrals ints (atoms, bs);
+    qcmol::Integrals ints (atoms, bs);
     
 
-    //RHF rhf (atoms,bs,ints, l_print);
-    //MP2 mp2 (atoms,bs,ints, l_print);
-    ESP esp (atoms, bs, ints);
+    //qcmol::RHF rhf (atoms,bs,ints);
+    //qcmol::MP2 mp2 (atoms,bs,ints);
+    qcmol::ESP esp (atoms, bs, ints);
 
     libint2::finalize ();
 
