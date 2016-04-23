@@ -22,7 +22,7 @@ public:
        const bool l_print = true,
        const std::vector<QAtom>& atoms_Q = std::vector<QAtom>());
 
-  arma::vec get_atomic_chages () { return m_qf; };
+  arma::vec get_atomic_charges () { return m_qf; };
   
 private:
 
