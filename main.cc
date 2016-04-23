@@ -27,7 +27,10 @@ int main (int argc, char *argv[])
     // Initialize molecule
 
     libint2::initialize ();
-      
+
+    cout << std::setprecision(6);
+    cout << std::fixed;
+    
     const auto filename = (argc > 1) ? argv[1] : "h2o.xyz";
 
     vector<Atom> atoms = read_geometry (filename);
