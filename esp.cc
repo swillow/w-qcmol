@@ -16,12 +16,16 @@ namespace willow { namespace qcmol {
 ESP::ESP (const vector<Atom>& atoms,
 	  const BasisSet& bs,
 	  const Integrals& ints,
+	  const int qm_chg,
 	  const bool l_print,
 	  const vector<QAtom>& atoms_Q)
 {
 
-  RHF rhf (atoms, bs, ints, l_print, atoms_Q); 
-  const auto nocc = num_electrons(atoms)/2;
+  RHF rhf (atoms, bs, ints, qm_chg, l_print, atoms_Q);
+
+  const double t_elec = num_electrons(atoms) - qm_chg;
+  const size_t nocc   = round (t_elec/2);
+  
   const arma::mat Dm = rhf.densityMatrix(nocc);
 
   esp_grid (atoms);

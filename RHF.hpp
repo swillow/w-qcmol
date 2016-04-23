@@ -19,6 +19,7 @@ public:
   RHF(const std::vector<libint2::Atom>& atoms,
       const libint2::BasisSet& bs,
       const Integrals& ints,
+      const int qm_chg = 0,
       const bool l_print = true,
       const std::vector<QAtom>& atoms_Q = std::vector<QAtom>() );
 

@@ -18,9 +18,13 @@ public:
   MP2 (const std::vector<libint2::Atom>& atoms,
        const libint2::BasisSet& bs,
        const Integrals& ints,
+       const int qm_chg = 0,
        const bool l_print = true,
        const std::vector<QAtom>& atoms_Q = std::vector<QAtom> ());
 
+  double mp2_energy () { return emp2;};
+  double rhf_energy () { return erhf;};
+  
 protected:
   int nocc;
   int ncore;
@@ -36,14 +40,16 @@ protected:
   int navir;
 
   double fss, fos;
-  double* ao_tei;
-  double* mo_tei;
+  
   // Eigen Values and Vectors
   arma::vec eval;
   arma::mat Cmat;
 
-  double*   mo_ints ();
+  double*   mo_ints (double* ao_tei);
 
+  double emp2;
+  double erhf;
+  
 };
 
 

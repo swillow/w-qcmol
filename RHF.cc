@@ -185,13 +185,15 @@ double electronic_HF_energy (arma::mat& Dm, arma::mat& Hm, arma::mat& Fm)
 RHF::RHF (const vector<Atom>& atoms,
 	  const BasisSet& bs,
 	  const Integrals& ints,
+	  const int qm_chg,
 	  const bool l_print,
 	  const vector<QAtom>& atoms_Q )
 {
   // 
   E_nuc = compute_nuclear_repulsion_energy (atoms, atoms_Q);
   //
-  auto nocc = num_electrons(atoms)/2;
+  const double t_elec = num_electrons(atoms) - qm_chg;
+  const size_t nocc   = round(t_elec/2);
 
   // -- Core Guess
   arma::mat Hm    = ints.Tm + ints.Vm;

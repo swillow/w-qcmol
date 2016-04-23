@@ -14,15 +14,25 @@ namespace willow { namespace qcmol {
 MP2::MP2 (const vector<Atom>& atoms,
 	  const BasisSet& bs,
 	  const Integrals& ints,
+	  const int qm_chg,
 	  const bool l_print,
 	  const vector<QAtom>& atoms_Q)
 {
   
-  RHF rhf (atoms, bs, ints, l_print, atoms_Q);
+  RHF rhf (atoms, bs, ints, qm_chg, l_print, atoms_Q);
 
-  ao_tei    = ints.TEI;
+  erhf = rhf.energy ();
+  emp2 = 0.0;
+  
+  if (ints.l_eri_direct) {
+    if (l_print)
+      cout << "DIRECT EMP2 CALCULATION IS NOT READY. TT    "  << endl;
 
-  nocc   = num_electrons(atoms)/2; 
+    return;
+  }
+
+  const double t_elec = num_electrons (atoms) - qm_chg;
+  nocc   = round(t_elec/2); 
   ncore  = compute_ncore(atoms);
   nbf    = ints.SmInvh.n_rows;
   nmo    = ints.SmInvh.n_cols; 
@@ -72,15 +82,13 @@ MP2::MP2 (const vector<Atom>& atoms,
   auto mfos  =  0.5*fos;
   
   // MO INTS (ia|jb)
-  mo_tei = mo_ints();
+  double* mo_tei = mo_ints(ints.TEI);
   
   // 
   // T(im,am|jm,bm)
   // 2*(im,am|jm,bm) - (im,bm|jm,am)
   //
   
-  auto emp2 = 0.0;
-
   for (auto im = 0; im < naocc; im++) {
     auto moi = iocc1 + im;
     
