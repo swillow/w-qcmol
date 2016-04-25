@@ -1,57 +1,149 @@
 #include "Integrals.hpp"
 #include <iostream>
+#include <thread>
 
 using namespace std;
 using namespace libint2;
 
 
+
 namespace willow { namespace qcmol {
 
 
+
+static unsigned int num_threads;
+
 static arma::mat compute_linear_dependence (arma::mat& Sm);
 
+
 template <Operator obtype>
-arma::mat compute_1body_ints (const BasisSet& bs,
-			      const vector<Atom>& atoms = vector<Atom>(),
-			      const vector<QAtom>& Q_atoms = vector<QAtom>() );
+void compute_1body_ints (const int thread_id,
+			 const BasisSet& bs,
+			 arma::mat& result,
+			 const vector<Atom>& atoms,
+			 const vector<QAtom>& Q_atoms);
+				
 
-
-arma::mat compute_schwartz_ints (const BasisSet& bs);
+void compute_schwartz_ints (const int thread_id,
+			    const BasisSet& bs,
+			    arma::mat& result);
 
 
 arma::mat compute_shellblock_norm(const BasisSet& obs,
 				  const arma::mat& A);
 
 
-double* compute_2body_ints (const BasisSet&bs,
-			    const arma::mat& Km);
+void compute_2body_ints (const int thread_id,
+			 const BasisSet&bs,
+			 const arma::mat& Km,
+			 arma::vec& result);
+
+
+void compute_2body_ints_direct (const int thread_id,
+				const BasisSet& bs,
+				const arma::mat& Dm,
+				const arma::mat& Schwartz,
+				arma::mat& result);
 
 
 Integrals::Integrals (const vector<Atom>& atoms,
 		      const BasisSet& bs,
 		      const vector<QAtom>& Q_atoms)
 {
+  num_threads = std::thread::hardware_concurrency ();
 
-  // Compute Overlap Integrals
-  Sm = compute_1body_ints<Operator::overlap> (bs);
-
-  // Compute Kinetic Integrals
-  Tm = compute_1body_ints<Operator::kinetic> (bs);
+  //cout << "NUM THREAD " << num_threads << endl;
   
-  // Compute Nuclear Attraction Integrals
-  Vm = compute_1body_ints<Operator::nuclear> (bs, atoms, Q_atoms);
-
+  if (num_threads == 0)
+    num_threads == 1;
+  
+  vector<arma::mat> St(num_threads);
+  vector<arma::mat> Tt(num_threads);
+  vector<arma::mat> Vt(num_threads);
+  
+  vector<std::thread> t_S(num_threads);
+  vector<std::thread> t_T(num_threads);
+  vector<std::thread> t_V(num_threads);
+  
+  
+  for (int id = 0; id < num_threads; ++id) {
+    
+    t_S[id] = std::thread (compute_1body_ints<Operator::overlap>,
+			   id, std::cref(bs), std::ref(St[id]),
+			   atoms, Q_atoms);
+    t_T[id] = std::thread (compute_1body_ints<Operator::kinetic>,
+			   id, std::cref(bs), std::ref(Tt[id]),
+			   atoms, Q_atoms);
+    t_V[id] = std::thread (compute_1body_ints<Operator::nuclear>,
+			   id, std::cref(bs), std::ref(Vt[id]),
+			   atoms, Q_atoms);
+  }
+  
+  // Join
+  for (auto id = 0; id < num_threads; ++id) {
+    t_S[id].join();
+    t_T[id].join();
+    t_V[id].join();
+  }
+  
+  Sm = St[0];
+  Tm = Tt[0];
+  Vm = Vt[0];
+  
+  for (auto id = 1; id < num_threads; ++id) {
+    Sm += St[id];
+    Tm += Tt[id];
+    Vm += Vt[id];
+  }
+  
   // Sinvh_
   SmInvh = compute_linear_dependence (Sm);
-  
-  Km = compute_schwartz_ints (bs); 
 
+
+  // ERI
+  vector<arma::mat>   Kt(num_threads);
+  vector<std::thread> t_K(num_threads);
+
+  for (auto id = 0; id < num_threads; ++id) {
+    t_K[id] = std::thread (compute_schwartz_ints,
+			   id, std::cref(bs), std::ref(Kt[id])); 
+  }
+  // Join
+  for (auto id = 0; id < num_threads; ++id) {
+    t_K[id].join();
+  }
+
+  Km = Kt[0];
+
+  for (auto id = 1; id < num_threads; ++id) {
+    Km += Kt[id];
+  }
+  
   // Two
   l_eri_direct = true;
 
   if (bs.nbf() < 200) {
     l_eri_direct = false;
-    TEI = compute_2body_ints (bs, Km);
+
+    vector<arma::vec>   eri_t(num_threads);
+    vector<std::thread> t_eri(num_threads);
+
+    for (auto id = 0; id < num_threads; ++id) {
+      t_eri[id] = std::thread (compute_2body_ints,
+			       id,
+			       std::cref(bs), 
+			       std::cref(Km),
+			       std::ref(eri_t[id]) );
+    }
+
+    for (auto id = 0; id < num_threads; ++id)
+      t_eri[id].join();
+  
+    for (auto id = 1; id < num_threads; ++id) {
+      eri_t[0] += eri_t[id];
+    }
+    TEI = eri_t[0];
+    
   }
 
   
@@ -59,28 +151,30 @@ Integrals::Integrals (const vector<Atom>& atoms,
 
 
 template <Operator obtype>
-arma::mat compute_1body_ints (const BasisSet& bs,
-			      const vector<Atom>& atoms,
-			      const vector<QAtom>& Q_atoms) 
+void compute_1body_ints (const int thread_id,
+			 const BasisSet& bs,
+			 arma::mat& result,
+			 const vector<Atom>& atoms,
+			 const vector<QAtom>& Q_atoms) 
 {
   const auto nbf     = bs.nbf();
   const auto nshells = bs.size();
 
-  arma::mat result (nbf,nbf);
+  result = arma::mat (nbf,nbf);
+  result.zeros();
   
   // construct the overlap integrals engine
   libint2::Engine engine (obtype, bs.max_nprim(), bs.max_l(), 0);
-  
-  // Nuclear Attraction Integrals Engine needs to know where the charges sit...
+
   if (obtype == Operator::nuclear) {
     vector<pair<double, array<double,3>>> q;
     for (const auto& atom : atoms) {
       q.push_back ( {static_cast<double> (atom.atomic_number),
-	            {{atom.x, atom.y, atom.z}}} );
+	    {{atom.x, atom.y, atom.z}}} );
     }
-
+    
     if (Q_atoms.size() > 0) {
-
+      
       for (const auto& q_atom : Q_atoms) {
 	q.push_back ( {q_atom.charge,
 	      {{q_atom.x, q_atom.y, q_atom.z}} } );
@@ -95,11 +189,14 @@ arma::mat compute_1body_ints (const BasisSet& bs,
   // Loop over unique shell pairs, {s1, s2} such that s1 >= s2
   // this is due to the permutational symmetry of the real integrals over
   // Hermitian operators : (1|2) = (2|1)
-  for (auto s1 = 0; s1 != nshells; ++s1) {
+  for (auto s1 = 0, s12 = 0; s1 != nshells; ++s1) {
     auto bf1  = shell2bf[s1]; // first basis function in this shell
     auto nbf1 = bs[s1].size(); //shells[s1].size ();
 
-    for (auto s2 = 0; s2 <= s1; ++s2) {
+    for (auto s2 = 0; s2 <= s1; ++s2, ++s12) {
+
+      if (s12 % num_threads != thread_id) continue;
+      
       auto bf2   = shell2bf[s2]; // first basis function in this shell
       auto nbf2  = bs[s2].size(); //shells[s2].size ();
 
@@ -118,9 +215,10 @@ arma::mat compute_1body_ints (const BasisSet& bs,
     
   } // s1
   
-  return result;
 
 }
+
+
 
 
 
@@ -157,8 +255,8 @@ arma::mat compute_linear_dependence (arma::mat& Sm)
   }
 
   if (Ndep > 0) {
-    cout << "*** WARNING *** " << Ndep << 
-      " LINEARLY DEPENDENT AND/OR REDUNDANT CARTESIAN FUNCTION ";
+    cout << "*** WARNING *** \n \t" << Ndep << 
+      "\t LINEARLY DEPENDENT AND/OR REDUNDANT CARTESIAN FUNCTION \n";
   }
 
   return SmInvh;
@@ -166,30 +264,36 @@ arma::mat compute_linear_dependence (arma::mat& Sm)
 }
 
 
-arma::mat compute_schwartz_ints (const BasisSet& bs)
+void compute_schwartz_ints (const int thread_id,
+			    const BasisSet& bs,
+			    arma::mat& result)
 {
 
   const auto nsh   = bs.size();
   const auto nsize = (nsh*(nsh+1))/2;
 
-  arma::mat K(nsh, nsh);
-  K.zeros();
+  result = arma::mat (nsh, nsh);
+  result.zeros();
   
   // Construct the 2-electron repulsion integrals engine
-  auto epsilon = 0.0;
-  libint2::Engine engine = libint2::Engine(Operator::coulomb, bs.max_nprim(),
-					   bs.max_l(), 0, epsilon);
-  //engine.set_precision(0.0);
+  libint2::Engine engine = libint2::Engine(Operator::coulomb,
+					   bs.max_nprim(),
+					   bs.max_l(),
+					   0);
+  
+  const auto precision = numeric_limits<double>::epsilon();
+  engine.set_precision(precision);
   
   auto shell2bf = bs.shell2bf();
   
-  auto nsave = 0;
-
   // loop over permutationally-unique set of shells
   for (auto s1 = 0, s12 = 0; s1 != nsh; ++s1) {
     auto nbf1 = bs[s1].size();
     
     for (auto s2 = 0; s2 <= s1; ++s2, ++s12) {
+      
+      if (s12%num_threads != thread_id) continue;
+      
       auto nbf2 = bs[s2].size();
       auto nbf12 = nbf1*nbf2;
       
@@ -204,35 +308,36 @@ arma::mat compute_schwartz_ints (const BasisSet& bs)
 	  if (max_value < val) max_value = val;
 	}
 
-      K(s1,s2) = K(s2,s1) = max_value;
+      result(s1,s2) = result(s2,s1) = max_value;
 	  
     }
   }
-
-  return K;
 
 }
 
 
 
-double* compute_2body_ints (const BasisSet& bs,
-			    const arma::mat& Schwartz)
+void compute_2body_ints (const int thread_id,
+			 const BasisSet& bs,
+			 const arma::mat& Schwartz,
+			 arma::vec& result)
 {
 
   const auto nbf     = bs.nbf(); 
   const auto nshells = bs.size();
   const auto nints = ((nbf*(nbf+1)/2)*((nbf*(nbf + 1)/2) + 1)/2);
 
-  auto result = new double[nints];
+  //auto result = new double[nints];
+  result = arma::vec(nints);
+  result.zeros();
 
-  fill (result, result+nints, 0.0);
-
-  const auto precision = numeric_limits<double>::epsilon();
   // Construct the 2-electron repulsion integrals engine
   libint2::Engine engine = libint2::Engine(Operator::coulomb,
 					   bs.max_nprim(),
 					   bs.max_l(),
 					   0);
+  
+  const auto precision = numeric_limits<double>::epsilon();
   engine.set_precision(precision);
   
   auto shell2bf = bs.shell2bf();
@@ -240,16 +345,20 @@ double* compute_2body_ints (const BasisSet& bs,
   auto ncount = 0;
 
   // loop over permutationally-unique set of shells
-  for (auto s1 = 0, s12 = 0; s1 != nshells; ++s1) {
+  for (auto s1 = 0, s1234 = 0; s1 != nshells; ++s1) {
     
-    for (auto s2 = 0; s2 <= s1; ++s2, ++s12) {
+    for (auto s2 = 0; s2 <= s1; ++s2) {
+      //if (s12 % num_threads != thread_id) continue;
+      
       auto s12_cut   = Schwartz(s1,s2);
 
       for (auto s3 = 0; s3 <= s1; ++s3) {
 
 	const auto s4_max = (s1 == s3) ? s2 : s3;
-	for (auto s4 = 0; s4 <= s4_max; ++s4) {
+	for (auto s4 = 0; s4 <= s4_max; ++s4, ++s1234) {
 	  auto s34_cut   = Schwartz(s3,s4);
+
+	  if (s1234 % num_threads != thread_id) continue;
 	  
 	  if (s12_cut*s34_cut < precision) {
 	    ++ncount;
@@ -331,12 +440,12 @@ double* compute_2body_ints (const BasisSet& bs,
 		  auto kl = INDEX(bf3, bf4);
 		  auto ijkl = INDEX (ij, kl);
 
-		  if (ijkl < nints) {
-		    result[ijkl] = eri4;
-		  }
-		  else {
-		    cout << "ERROR IJKL " << ijkl << endl;
-		  }
+		  //if (ijkl < nints) {
+		  result(ijkl) = eri4;
+		  //}
+		  //else {
+		  //  cout << "ERROR IJKL " << ijkl << endl;
+		  //}
 		  
 		}
 	      }
@@ -349,8 +458,6 @@ double* compute_2body_ints (const BasisSet& bs,
 
   //cout << " JUMP NUM " << ncount << endl;
 
-  return result;
-
 }
 
 
@@ -361,9 +468,40 @@ arma::mat compute_2body_fock (const BasisSet& bs,
 			      const arma::mat& Schwartz)
 {
 
+  vector<arma::mat>   Gt(num_threads);
+
+  vector<std::thread> t_G(num_threads);
+
+  for (int id = 0; id < num_threads; ++id) {
+    t_G[id] = std::thread (compute_2body_ints_direct,
+			   id, std::cref(bs), std::cref(Dm),
+			   std::cref(Schwartz),
+			   std::ref(Gt[id]));
+  }
+
+  for (int id = 0; id < num_threads; ++id) {
+    t_G[id].join();
+  }
+
+  for (auto id = 1; id < num_threads; ++id) {
+    Gt[0] += Gt[id];
+  }
+
+  return 0.25* (Gt[0] + Gt[0].t());
+  
+}
+
+
+
+void compute_2body_ints_direct (const int thread_id,
+				const BasisSet& bs,
+				const arma::mat& Dm, // density matrix
+				const arma::mat& Schwartz,
+				arma::mat& Gm)
+{
   const auto nbf     = bs.nbf();
   const auto nshells = bs.size();
-  arma::mat Gm (nbf, nbf);
+  Gm = arma::mat (nbf, nbf);
   
   Gm.zeros();
     
@@ -403,7 +541,10 @@ arma::mat compute_2body_fock (const BasisSet& bs,
 				   max (D_shblk_norm(s2,s3), Dnorm12));
 
 	const auto s4_max = (s1 == s3) ? s2 : s3;
-	for (auto s4 = 0; s4 <= s4_max; ++s4)  {
+	for (auto s4 = 0; s4 <= s4_max; ++s4, ++s1234)  {
+
+	  if (s1234 % num_threads != thread_id) continue;
+	  
 	  auto bf4_first = shell2bf[s4];
 	  auto nbf4      = bs[s4].size();
 	  
@@ -458,7 +599,7 @@ arma::mat compute_2body_fock (const BasisSet& bs,
   
   // Symmetrize the result and return
   
-  return 0.25* (Gm + Gm.t()); 
+  //return 0.25* (Gm + Gm.t()); 
   
 }
 

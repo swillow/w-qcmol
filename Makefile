@@ -17,7 +17,7 @@ HOME = .
 
 CFLAGS = -O3 -ffast-math    -march=native -std=c++11 $(LIBINT2INCLUDES)  
 #CFLAGS = -g   -march=native -std=c++11 $(LIBINT2INCLUDES)  
-LIBS =  -L$(LIBINT2PATH)/lib -lint2  -larmadillo -lblas -llapack
+LIBS =  -L$(LIBINT2PATH)/lib -lint2  -larmadillo -lblas -llapack -lpthread
 
 SRC = Integrals.cc RHF.cc mp2ints.cc MP2.cc esp.cc 
 

@@ -82,7 +82,7 @@ MP2::MP2 (const vector<Atom>& atoms,
   auto mfos  =  0.5*fos;
   
   // MO INTS (ia|jb)
-  double* mo_tei = mo_ints(ints.TEI);
+  double* mo_tei = mo_ints(ints.TEI.memptr() );
   
   // 
   // T(im,am|jm,bm)

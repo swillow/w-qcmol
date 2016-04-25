@@ -2,7 +2,6 @@
 #define RHF_HPP
 
 #include <armadillo>
-#include "Molecule.hpp"
 #include "EigenSolver.hpp"
 #include "Integrals.hpp"
 
@@ -33,8 +32,6 @@ public:
   double E_nuc;
   double E_hf;
 };
-
-extern arma::mat g_matrix (double* TEI, arma::mat& D);
 
 
 

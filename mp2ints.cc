@@ -7,7 +7,7 @@ namespace willow { namespace qcmol {
 
 // (ia|jb) = (bj|ai)
 // store (ia <= jb)
-double* MP2::mo_ints (double* ao_tei)
+double* MP2::mo_ints (const double* ao_tei)
 { // calculate (ia|jb) (iocc1:iocc2,1:ivir2,iocc1:iocc2,ivir1:ivir2)
   const auto nints = ((nmo*(nmo+1)/2)*((nmo*(nmo+1)/2)+1)/2);
   const auto nmod  = nbf%5;

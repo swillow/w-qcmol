@@ -24,19 +24,20 @@ public:
 	     const libint2::BasisSet& bs,
 	     const std::vector<QAtom>& atoms_Q=std::vector<QAtom>() );
   
-  // Destructor
-  ~Integrals () { if ( ! l_eri_direct) delete [] TEI;}
-
   // Data members
   arma::mat Sm;  // Overlap
   arma::mat Tm;  // Kinetic-energy
   arma::mat Vm;  // Nuclear-Attraction
   arma::mat SmInvh;  // Orthogonalize Basis
   arma::mat Km;  // Schwartz screening
-  double* TEI;  // Store 2-e integrals
+  arma::vec TEI;  // Store 2-e integrals
   bool    l_eri_direct; // 
   
 };
+
+
+extern arma::mat compute_2body_fock_memory (const arma::vec& TEI,
+					    const arma::mat& Dm);
 
 extern arma::mat compute_shellblock_norm(const libint2::BasisSet& obs,
 					 const arma::mat& A);

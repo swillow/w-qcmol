@@ -1,3 +1,6 @@
+#include <thread>
+#include "Molecule.hpp"
+#include "Integrals.hpp"
 #include "RHF.hpp"
 #include "diis.hpp"
 
@@ -6,45 +9,13 @@ using namespace libint2;
 
 namespace willow { namespace qcmol {
 
-
-static double compute_nuclear_repulsion_energy (const vector<Atom>& atoms,
-						const vector<QAtom>& atoms_Q)
-{
-  auto enuc = 0.0;
-  
-  for (auto i = 0; i < atoms.size(); ++i) {
-    double qi = static_cast<double> (atoms[i].atomic_number);
-    for (auto j = i+1; j < atoms.size(); ++j) {
-      auto xij = atoms[i].x - atoms[j].x;
-      auto yij = atoms[i].y - atoms[j].y;
-      auto zij = atoms[i].z - atoms[j].z;
-      auto r2 = xij*xij + yij*yij + zij*zij;
-      auto r = sqrt(r2);
-      double qj = static_cast<double> (atoms[j].atomic_number);
-      
-      enuc += qi*qj / r;
-    }
-
-    
-    for (auto j = 0; j < atoms_Q.size(); ++j) {
-      auto xij = atoms[i].x - atoms_Q[j].x;
-      auto yij = atoms[i].y - atoms_Q[j].y;
-      auto zij = atoms[i].z - atoms_Q[j].z;
-      auto r2 = xij*xij + yij*yij + zij*zij;
-      if (r2 > 0.01) { // to avoid the overlapped Qs
-	auto r = sqrt(r2);
-	double qj = atoms_Q[j].charge;
-	enuc += qi*qj / r;
-      }
-    }
-  }
-
-  return enuc;
-  
-}
+static unsigned int num_threads;
 
 
-arma::mat g_matrix (double* TEI, arma::mat& Dm)
+void compute_2body_ints_memory (const int thread_id,
+				const arma::vec& TEI,
+				const arma::mat& Dm,
+				arma::mat& Gm)
 {
   const auto nbf = Dm.n_rows;
 
@@ -55,20 +26,23 @@ arma::mat g_matrix (double* TEI, arma::mat& Dm)
   Jm.zeros();
   Km.zeros();
 
-  for (auto i = 0; i < nbf; i++) {
+  for (auto i = 0, ijkl = 0; i < nbf; ++i) {
     auto it = i;
     
-    for (auto j = 0; j <= it; j++) {
+    for (auto j = 0; j <= it; ++j) {
       auto ij = INDEX(it,j);
       
-      for (auto k = 0; k <= it; k++)
-	for (auto l = 0; l <= k; l++) {
+      for (auto k = 0; k <= it; ++k)
+	for (auto l = 0; l <= k; ++l, ++ijkl) {
+
+	  if (ijkl % num_threads != thread_id) continue;
+	  
 	  auto kl = INDEX(k,l);
 	  
 	  if (kl > ij) continue;
 
 	  auto ijkl = INDEX(ij,kl);
-	  auto eri4 = TEI [ijkl];
+	  auto eri4 = TEI (ijkl);
 	  // (ij|kl)
 	  Jm(it,j) += Dm(k,l)*eri4;
 	  Km(it,l) += Dm(k,j)*eri4;
@@ -116,8 +90,75 @@ arma::mat g_matrix (double* TEI, arma::mat& Dm)
   }
 
 
-  return (Jm - 0.5*Km);
+  Gm = (Jm - 0.5*Km);
 
+}
+
+
+
+
+static arma::mat g_matrix (const arma::vec& TEI, arma::mat& Dm)
+{
+
+  vector<arma::mat> Gt(num_threads);
+
+  std::thread t_G[num_threads];
+
+  for (int id = 0; id < num_threads; ++id) {
+    t_G[id] = std::thread (compute_2body_ints_memory,
+			   id, std::cref(TEI),
+			   std::cref(Dm),
+			   std::ref(Gt[id]));
+  }
+
+  for (int id = 0; id < num_threads; ++id) {
+    t_G[id].join();
+  }
+
+  for (auto id = 1; id < num_threads; ++id) {
+    Gt[0] += Gt[id];
+  }
+
+  return 0.5* (Gt[0] + Gt[0].t());
+  
+}
+
+
+
+static double compute_nuclear_repulsion_energy (const vector<Atom>& atoms,
+						const vector<QAtom>& atoms_Q)
+{
+  auto enuc = 0.0;
+  
+  for (auto i = 0; i < atoms.size(); ++i) {
+    double qi = static_cast<double> (atoms[i].atomic_number);
+    for (auto j = i+1; j < atoms.size(); ++j) {
+      auto xij = atoms[i].x - atoms[j].x;
+      auto yij = atoms[i].y - atoms[j].y;
+      auto zij = atoms[i].z - atoms[j].z;
+      auto r2 = xij*xij + yij*yij + zij*zij;
+      auto r = sqrt(r2);
+      double qj = static_cast<double> (atoms[j].atomic_number);
+      
+      enuc += qi*qj / r;
+    }
+
+    
+    for (auto j = 0; j < atoms_Q.size(); ++j) {
+      auto xij = atoms[i].x - atoms_Q[j].x;
+      auto yij = atoms[i].y - atoms_Q[j].y;
+      auto zij = atoms[i].z - atoms_Q[j].z;
+      auto r2 = xij*xij + yij*yij + zij*zij;
+      if (r2 > 0.01) { // to avoid the overlapped Qs
+	auto r = sqrt(r2);
+	double qj = atoms_Q[j].charge;
+	enuc += qi*qj / r;
+      }
+    }
+  }
+
+  return enuc;
+  
 }
 
 
@@ -189,6 +230,9 @@ RHF::RHF (const vector<Atom>& atoms,
 	  const bool l_print,
 	  const vector<QAtom>& atoms_Q )
 {
+
+  num_threads = std::thread::hardware_concurrency();
+  
   // 
   E_nuc = compute_nuclear_repulsion_energy (atoms, atoms_Q);
   //
@@ -252,9 +296,7 @@ RHF::RHF (const vector<Atom>& atoms,
 
     eig_solver.compute (ints.SmInvh, Fm);
     Dm = densityMatrix (nocc);
-    if (iter < 3) {
-      Dm = 0.7*Dm + 0.3*Dm_last;
-    }
+
     E_hf = electronic_HF_energy (Dm, Hm, Fm);
 
     E_diff = E_hf - E_hf_last;
