@@ -17,11 +17,12 @@ MP2::MP2 (const vector<Atom>& atoms,
 	  const int qm_chg,
 	  const bool l_print,
 	  const vector<QAtom>& atoms_Q)
+  : RHF (atoms, bs, ints, qm_chg, l_print, atoms_Q)
 {
   
-  RHF rhf (atoms, bs, ints, qm_chg, l_print, atoms_Q);
+  //RHF rhf (atoms, bs, ints, qm_chg, l_print, atoms_Q);
 
-  erhf = rhf.energy ();
+  erhf = energy ();
   emp2 = 0.0;
   
   if (ints.l_eri_direct) {
@@ -47,8 +48,8 @@ MP2::MP2 (const vector<Atom>& atoms,
   naocc = nocc - ncore;
   navir = nmo  - nocc;
 
-  eval = rhf.eig_solver.eigenvalues();
-  Cmat = rhf.eig_solver.eigenvectors();
+  eval = eig_solver.eigenvalues();
+  Cmat = eig_solver.eigenvectors();
 
   if (l_print) {
     cout << "nmo " << nmo << endl;

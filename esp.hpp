@@ -6,12 +6,12 @@
 #include <armadillo>
 #include "Molecule.hpp"
 #include "Integrals.hpp"
-
+#include "RHF.hpp"
 
 namespace willow { namespace qcmol {
 
 
-class ESP
+class ESP : public RHF
 {
   
 public:

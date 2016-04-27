@@ -7,12 +7,12 @@
 #include <armadillo>
 #include "Molecule.hpp"
 #include "Integrals.hpp"
-
+#include "RHF.hpp"
 
 namespace willow { namespace qcmol {
 
 
-class MP2 {
+class MP2 : public RHF {
 public:
 
   MP2 (const std::vector<libint2::Atom>& atoms,
