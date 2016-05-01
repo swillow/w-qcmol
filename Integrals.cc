@@ -55,7 +55,7 @@ Integrals::Integrals (const vector<Atom>& atoms,
   //cout << "NUM THREAD " << num_threads << endl;
   
   if (num_threads == 0)
-    num_threads == 1;
+    num_threads = 1;
   
   vector<arma::mat> St(num_threads);
   vector<arma::mat> Tt(num_threads);
