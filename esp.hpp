@@ -28,18 +28,10 @@ private:
 
   arma::vec m_qf;
   
-  struct Grid {
-    double x, y, z;
-    double val;
-  };
+  const double ang2bohr = 1.0/0.52917721067; // 2014 CODATA value
   
-  const double ang2bohr = 1.0/0.52917721092; // 2010 CODATA value
-  
-  std::vector<Grid> grids;
-
-  void esp_esp  (const std::vector<libint2::Atom>& atoms,
-		 const libint2::BasisSet& bs,
-		 const arma::mat& Dm);
+  std::vector<arma::vec3> m_grids;
+  arma::vec               m_grids_val;
   
   void esp_grid (const std::vector<libint2::Atom>& atoms);
   

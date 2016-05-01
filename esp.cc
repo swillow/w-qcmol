@@ -1,5 +1,9 @@
-#include "esp.hpp"
+#include <thread>
+#include <vector>
+#include <armadillo>
 #include "RHF.hpp"
+#include "esp.hpp"
+
 //
 // Electrostatic Potential (ESP)
 // : calculates partial atomic charges that fit
@@ -12,6 +16,16 @@ using namespace libint2;
 namespace willow { namespace qcmol {
 
 
+static unsigned int num_threads;
+
+static void esp_esp (const int thread_id,
+		     const vector<Atom>& atoms,
+		     const BasisSet& bs,
+		     const arma::mat& Dm,
+		     const vector<arma::vec3>& grids,
+		     arma::vec& results);
+
+
 
 ESP::ESP (const vector<Atom>& atoms,
 	  const BasisSet& bs,
@@ -22,7 +36,10 @@ ESP::ESP (const vector<Atom>& atoms,
   : RHF (atoms, bs, ints, qm_chg, l_print, atoms_Q)
 {
 
-  //RHF rhf (atoms, bs, ints, qm_chg, l_print, atoms_Q);
+  num_threads = std::thread::hardware_concurrency();
+
+  if (num_threads == 0)
+    num_threads = 1;
 
   const double t_elec = num_electrons(atoms) - qm_chg;
   const size_t nocc   = round (t_elec/2);
@@ -30,9 +47,33 @@ ESP::ESP (const vector<Atom>& atoms,
   const arma::mat Dm = densityMatrix(nocc);
 
   esp_grid (atoms);
-  
-  esp_esp (atoms, bs, Dm);
 
+  // ---- Thread
+  vector<arma::vec>   grid_t(num_threads);
+  vector<std::thread> t_esp (num_threads);
+
+  for (auto id = 0; id < num_threads; ++id) {
+    t_esp[id] = std::thread (esp_esp, id,
+			     std::cref(atoms),
+			     std::cref(bs),
+			     std::cref(Dm),
+			     std::cref(m_grids),
+			     std::ref(grid_t[id]));
+  }
+  
+  // Join
+  for (auto id = 0; id < num_threads; ++id) {
+    t_esp[id].join();
+  }
+
+  m_grids_val = grid_t[0];
+
+  for (auto id = 1; id < num_threads; ++id) {
+    m_grids_val += grid_t[id];
+  }
+  //---- (done: Thread) ---
+
+  
   m_qf = esp_fit (atoms);
   
   if (l_print) {
@@ -44,10 +85,18 @@ ESP::ESP (const vector<Atom>& atoms,
 }
 
 
-void ESP::esp_esp (const vector<Atom>& atoms,
-		   const BasisSet& bs,
-		   const arma::mat& Dm)
+void esp_esp (const int thread_id,
+	      const vector<Atom>& atoms,
+	      const BasisSet& bs,
+	      const arma::mat& Dm,
+	      const vector<arma::vec3>& grids,
+	      arma::vec& result)
 {
+
+  const auto nsize   = grids.size();
+
+  result = arma::vec(nsize, arma::fill::zeros);
+  
   const auto nshells = bs.size();
   const auto nbf     = bs.nbf();
   
@@ -61,9 +110,12 @@ void ESP::esp_esp (const vector<Atom>& atoms,
   arma::mat Vm(nbf,nbf);
   
   for (auto ig = 0; ig < grids.size(); ++ig) {
-    const auto xg = grids[ig].x;
-    const auto yg = grids[ig].y;
-    const auto zg = grids[ig].z;
+    
+    if (ig % num_threads != thread_id) continue;
+    
+    const auto xg = grids[ig](0);
+    const auto yg = grids[ig](1);
+    const auto zg = grids[ig](2);
 
     // Interaction with electron density
     vector<pair<double,array<double,3>>> q;
@@ -117,7 +169,7 @@ void ESP::esp_esp (const vector<Atom>& atoms,
       zval += static_cast<double>(atoms[ia].atomic_number)/r;
     }
 
-    grids[ig].val = gval + zval;
+    result(ig) = gval + zval;
   }
   
 }
@@ -148,10 +200,10 @@ arma::vec ESP::esp_fit (const vector<Atom>& atoms)
       
       auto sum = 0.0;
 
-      for (auto k = 0; k < grids.size(); ++k) {
-	auto xg = grids[k].x;
-	auto yg = grids[k].y;
-	auto zg = grids[k].z;
+      for (auto k = 0; k < m_grids.size(); ++k) {
+	auto xg = m_grids[k](0);
+	auto yg = m_grids[k](1);
+	auto zg = m_grids[k](2);
 
 	auto rig2 = (xi-xg)*(xi-xg) + (yi-yg)*(yi-yg) + (zi-zg)*(zi-zg);
 	auto rjg2 = (xj-xg)*(xj-xg) + (yj-yg)*(yj-yg) + (zj-zg)*(zj-zg);
@@ -175,11 +227,11 @@ arma::vec ESP::esp_fit (const vector<Atom>& atoms)
     auto zi = atoms[i].z;
 
     auto sum = 0.0;
-    for (auto k = 0; k < grids.size(); ++k) {
-      auto xg = grids[k].x;
-      auto yg = grids[k].y;
-      auto zg = grids[k].z;
-      auto val = grids[k].val;
+    for (auto k = 0; k < m_grids.size(); ++k) {
+      auto xg = m_grids[k](0);
+      auto yg = m_grids[k](1);
+      auto zg = m_grids[k](2);
+      auto val = m_grids_val(k);
 
       auto rig2 = (xi-xg)*(xi-xg) + (yi-yg)*(yi-yg) + (zi-zg)*(zi-zg);
 
@@ -264,28 +316,31 @@ void ESP::esp_grid (const vector<Atom>& atoms)
   const int ngrid_z = int ((grd_max_z - grd_min_z + 2.0*rcut)/spac) + 1;
 
   const auto small = 1.0e-8;
+  arma::vec3 vg;
   
   for(auto iz = 0; iz <  ngrid_z; ++iz)
     for(auto iy = 0; iy <  ngrid_y; ++iy)
       for(auto ix = 0; ix <  ngrid_x; ++ix) {
+
+	vg.zeros();
 	
-	double xg = grd_min_x - rcut + ix*spac;
-	double yg = grd_min_y - rcut + iy*spac;
-	double zg = grd_min_z - rcut + iz*spac;
+	vg(0) = grd_min_x - rcut + ix*spac;
+	vg(1) = grd_min_y - rcut + iy*spac;
+	vg(2) = grd_min_z - rcut + iz*spac;
 
 	double dmin = rcut2;
 	
 	bool lupdate = true;
 	
 	for (auto ia = 0; ia < atoms.size(); ++ia) {
-	  int iz = atoms[ia].atomic_number;
+	  int iz    = atoms[ia].atomic_number;
 	  auto rad2 = radius[iz]*radius[iz];
 
-	  auto x = atoms[ia].x;
-	  auto y = atoms[ia].y;
-	  auto z = atoms[ia].z;
+	  auto dx = vg(0) - atoms[ia].x;
+	  auto dy = vg(1) - atoms[ia].y;
+	  auto dz = vg(2) - atoms[ia].z;
 	  
-	  auto d2  = (xg-x)*(xg-x) + (yg-y)*(yg-y) + (zg-z)*(zg-z);
+	  auto d2  = dx*dx + dy*dy + dz*dz;
 
 	  if ( (rad2 - d2) > small) {
 	    lupdate = false;
@@ -298,7 +353,7 @@ void ESP::esp_grid (const vector<Atom>& atoms)
 
 	if (lupdate) {
 	  if ( (rcut2 - dmin) > small) {
-	    grids.push_back ({xg,yg,zg,0.0});
+	    m_grids.push_back (vg);
 	  }
 	}
 	
