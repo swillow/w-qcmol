@@ -102,7 +102,7 @@ static arma::mat g_matrix (const arma::vec& TEI, arma::mat& Dm)
 
   vector<arma::mat> Gt(num_threads);
 
-  std::thread t_G[num_threads];
+  vector<std::thread> t_G(num_threads);
 
   for (int id = 0; id < num_threads; ++id) {
     t_G[id] = std::thread (compute_2body_ints_memory,
