@@ -13,6 +13,7 @@
 #include "Molecule.hpp"
 #include "Integrals.hpp"
 #include "RHF.hpp"
+#include "RHFGrad.hpp"
 #include "MP2.hpp"
 #include "esp.hpp"
 
@@ -45,8 +46,9 @@ int main (int argc, char *argv[])
     
 
     //qcmol::RHF rhf (atoms,bs,ints);
+    qcmol::RHFGrad rhf (atoms,bs,ints);
     //qcmol::MP2 mp2 (atoms,bs,ints);
-    qcmol::ESP esp (atoms, bs, ints);
+    //qcmol::ESP esp (atoms, bs, ints);
 
     libint2::finalize ();
 
