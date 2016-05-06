@@ -22,15 +22,19 @@ public:
       const bool l_print = true,
       const std::vector<QAtom>& atoms_Q = std::vector<QAtom>() );
 
-  arma::mat densityMatrix (const int nocc);
-  arma::mat energyWeightDensityMatrix (const int nocc);
+  arma::mat densityMatrix ();
+  arma::mat energyWeightDensityMatrix ();
 
-  double energy () { return (E_nuc + E_hf);};
-  
+  double rhf_energy  () { return (E_nuc + E_hf);};
+  double get_nocc() { return m_nocc;};
   EigenSolver eig_solver;
   
+private:
+
+  size_t m_nocc;
   double E_nuc;
   double E_hf;
+  
 };
 
 

@@ -237,7 +237,7 @@ RHF::RHF (const vector<Atom>& atoms,
   E_nuc = compute_nuclear_repulsion_energy (atoms, atoms_Q);
   //
   const double t_elec = num_electrons(atoms) - qm_chg;
-  const size_t nocc   = round(t_elec/2);
+  m_nocc   = round(t_elec/2);
 
   // -- Core Guess
   arma::mat Hm    = ints.Tm + ints.Vm;
@@ -256,7 +256,7 @@ RHF::RHF (const vector<Atom>& atoms,
 
     Fm = Hm + compute_2body_fock_general (bs, Dm_min, bs_min, true);
     eig_solver.compute (ints.SmInvh, Fm);
-    Dm = densityMatrix(nocc);
+    Dm = densityMatrix();
   }
 
   // ********************
@@ -295,7 +295,7 @@ RHF::RHF (const vector<Atom>& atoms,
     Fm = diis.getF (Fm, Dm);
 
     eig_solver.compute (ints.SmInvh, Fm);
-    Dm = densityMatrix (nocc);
+    Dm = densityMatrix ();
 
     E_hf = electronic_HF_energy (Dm, Hm, Fm);
 
@@ -322,7 +322,7 @@ RHF::RHF (const vector<Atom>& atoms,
 }
 
 
-arma::mat RHF::energyWeightDensityMatrix (const int nocc) 
+arma::mat RHF::energyWeightDensityMatrix ()
 {
 
   const arma::vec E = eig_solver.eigenvalues();
@@ -330,21 +330,21 @@ arma::mat RHF::energyWeightDensityMatrix (const int nocc)
   arma::mat W (C.n_rows, C.n_rows); 
   W.zeros();
   
-  for (auto n = 0; n < nocc; n++)
+  for (auto n = 0; n < m_nocc; n++)
     W += 2.0*E(n)*C.col(n)*arma::trans(C.col(n)) ;
 
   return W;
 }
 
 
-arma::mat RHF::densityMatrix (const int nocc)
+arma::mat RHF::densityMatrix ()
 {
   // Form Density Matrix
   // 2.0 : number of occupied electron on each MO.
   
   const arma::mat Cm     = eig_solver.eigenvectors();
   const auto nbf         = Cm.n_rows;
-  const arma::mat Cm_occ = Cm.submat(0, 0, nbf-1, nocc-1); 
+  const arma::mat Cm_occ = Cm.submat(0, 0, nbf-1, m_nocc-1); 
   arma::mat Dm           = 2.0*Cm_occ*Cm_occ.t();
   
   return Dm;

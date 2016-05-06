@@ -22,7 +22,7 @@ MP2::MP2 (const vector<Atom>& atoms,
   
   //RHF rhf (atoms, bs, ints, qm_chg, l_print, atoms_Q);
 
-  erhf = energy ();
+  erhf = rhf_energy ();
   emp2 = 0.0;
   
   if (ints.l_eri_direct) {
@@ -32,8 +32,7 @@ MP2::MP2 (const vector<Atom>& atoms,
     return;
   }
 
-  const double t_elec = num_electrons (atoms) - qm_chg;
-  nocc   = round(t_elec/2); 
+  nocc   = get_nocc();
   ncore  = compute_ncore(atoms);
   nbf    = ints.SmInvh.n_rows;
   nmo    = ints.SmInvh.n_cols; 

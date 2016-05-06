@@ -41,10 +41,7 @@ ESP::ESP (const vector<Atom>& atoms,
   if (num_threads == 0)
     num_threads = 1;
 
-  const double t_elec = num_electrons(atoms) - qm_chg;
-  const size_t nocc   = round (t_elec/2);
-  
-  const arma::mat Dm = densityMatrix(nocc);
+  const arma::mat Dm = densityMatrix();
 
   esp_grid (atoms);
 
