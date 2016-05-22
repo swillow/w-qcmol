@@ -35,18 +35,26 @@ int main (int argc, char *argv[])
     const auto filename = (argc > 1) ? argv[1] : "h2o.xyz";
 
     vector<Atom> atoms = qcmol::read_geometry (filename);
+    //--
+    vector<qcmol::QAtom> atoms_Q;
+    qcmol::QAtom qatom;
+    qatom.charge = 0.5;
+    qatom.x      = 3.0/0.52917721067;
+    qatom.y      = 0.0;
+    qatom.z      = 0.0;
+    atoms_Q.push_back(qatom);
+    //----
     
-
     // Create Basis Set
     libint2::Shell::do_enforce_unit_normalization(false);
     libint2::BasisSet bs  ("aug-cc-pVDZ", atoms);
     
     
-    qcmol::Integrals ints (atoms, bs);
+    qcmol::Integrals ints (atoms, bs, atoms_Q);
     
 
     //qcmol::RHF rhf (atoms,bs,ints);
-    qcmol::RHFGrad rhf (atoms,bs,ints);
+    qcmol::RHFGrad rhf (atoms,bs,ints, 0, true, atoms_Q);
     //qcmol::MP2 mp2 (atoms,bs,ints);
     //qcmol::ESP esp (atoms, bs, ints);
 

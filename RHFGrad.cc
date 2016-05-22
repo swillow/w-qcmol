@@ -15,13 +15,9 @@ namespace willow {  namespace qcmol {
 
 static unsigned int num_threads;
 
-static arma::vec compute_nuclear_gradient (const vector<Atom>& atoms);
-
-static arma::vec compute_grad (const vector<Atom>& atoms,
-			       const BasisSet& obs,
-			       const arma::mat& D, 
-			       const arma::mat& W,
-			       const arma::mat& Schwartz);
+static arma::vec compute_nuclear_gradient (const vector<Atom>& atoms,
+					   const vector<QAtom>& atoms_Q,
+					   arma::vec& grd_Q);
 
 
 void compute_2body_deriv_ints (const int thread_id,
@@ -39,7 +35,13 @@ void compute_1body_deriv_ints (const int thread_id,
 			       const arma::mat& Dm,
 			       arma::vec& result);
 
-
+void compute_1body_deriv_nuclear (const int thread_id,
+				  const BasisSet& obs,
+				  const vector<Atom>& atoms,
+				  const arma::mat& Dm,
+				  const vector<QAtom>& atoms_Q,
+				  arma::vec& grd,
+				  arma::vec& grd_Q);
 
 //-----
 //
@@ -59,36 +61,19 @@ RHFGrad::RHFGrad (const vector<Atom>& atoms,
   arma::mat D = densityMatrix ();
   arma::mat W = energyWeightDensityMatrix ();
   
-  grad = compute_grad (atoms, bs, D, W, ints.Km);
-
-  if (l_print) {
-    cout << "Total Gradient : " << endl;
-    auto natom = atoms.size();
-    for (auto i = 0; i < natom; ++i)
-      cout << (i + 1) << "  " << grad(3*i) << " " << grad(3*i+1) <<
-	" " << grad(3*i+2) << endl;
-  }
-}
-
-
-arma::vec compute_grad (const vector<Atom>& atoms,
-			const BasisSet& bs,
-			const arma::mat& D, // density Matrix
-			const arma::mat& W, // energy weight density Matrix
-			const arma::mat& Schwartz)
-{
-
   const auto natom = atoms.size();
   const auto nbf   = bs.nbf();
 
   vector<arma::vec> grd_kin_t (num_threads);
   vector<arma::vec> grd_nuc_t (num_threads);
+  vector<arma::vec> grd_nuc_Q_t(num_threads);
   vector<arma::vec> frc_orth_t(num_threads);
 
   vector<std::thread> t_grd_kin (num_threads);
   vector<std::thread> t_grd_nuc (num_threads);
   vector<std::thread> t_frc_orth(num_threads);
 
+  vector<QAtom> bq_Q;
   
   for (int id = 0; id < num_threads; ++id) {
     // Kinetic 
@@ -101,12 +86,14 @@ arma::vec compute_grad (const vector<Atom>& atoms,
 		   std::ref(grd_kin_t[id]) );
     // Nuclear Der 
     t_grd_nuc[id] =
-      std::thread (compute_1body_deriv_ints<libint2::Operator::nuclear>,
+      std::thread (compute_1body_deriv_nuclear,
 		   id,
 		   std::cref(bs),
 		   std::cref(atoms),
 		   std::cref(D),
-		   std::ref(grd_nuc_t[id]) );
+		   std::cref(atoms_Q), 
+		   std::ref(grd_nuc_t[id]),
+		   std::ref(grd_nuc_Q_t[id]) );
     
     // Overlap
     t_frc_orth[id] =
@@ -129,11 +116,13 @@ arma::vec compute_grad (const vector<Atom>& atoms,
   for (auto id = 1; id < num_threads; ++id) {
     grd_kin_t[0]  += grd_kin_t[id];
     grd_nuc_t[0]  += grd_nuc_t[id];
+    grd_nuc_Q_t[0] += grd_nuc_Q_t[id];
     frc_orth_t[0] += frc_orth_t[id];
   }
   
   // Nuclear Repulsion
-  arma::vec grd_rep  = compute_nuclear_gradient (atoms);
+  arma::vec grd_rep_Q (3*atoms_Q.size(), arma::fill::zeros);
+  arma::vec grd_rep  = compute_nuclear_gradient (atoms, atoms_Q, grd_rep_Q);
 
   // Two electron Integral
   vector<arma::vec>   grd_eri_t (num_threads);
@@ -146,7 +135,7 @@ arma::vec compute_grad (const vector<Atom>& atoms,
 		   std::cref(bs),
 		   std::cref(atoms),
 		   std::cref(D),
-		   std::cref(Schwartz),
+		   std::cref(ints.Km),
 		   std::ref(grd_eri_t[id]) );
   }
 
@@ -156,10 +145,31 @@ arma::vec compute_grad (const vector<Atom>& atoms,
 
   for (auto id = 1; id < num_threads; ++id)
     grd_eri_t[0] += grd_eri_t[id];
+
+  m_grad = grd_kin_t[0] + grd_nuc_t[0] - frc_orth_t[0] + grd_rep + grd_eri_t[0];
+  m_grad_Q = grd_nuc_Q_t[0] + grd_rep_Q;
   
-  return (grd_kin_t[0] + grd_nuc_t[0] - frc_orth_t[0] + grd_rep + grd_eri_t[0]);
+  if (l_print) {
+    cout << "Total Gradient (QM): " << endl;
   
-  
+    for (auto i = 0; i < natom; ++i)
+      cout << (i + 1)
+	   << "  " << m_grad(3*i)
+	   << "  " << m_grad(3*i+1) 
+	   << "  " << m_grad(3*i+2) << endl;
+
+    auto natom_Q = atoms_Q.size();
+
+    if (natom_Q > 0) {
+      cout << "Total Gradient (BQ): " << endl;
+      for (auto i = 0; i < natom_Q; ++i)
+	cout << (i + 1)
+	     << "  " << m_grad_Q(3*i)
+	     << "  " << m_grad_Q(3*i+1) 
+	     << "  " << m_grad_Q(3*i+2) << endl;
+    }
+    
+  }
 }
 
 
@@ -188,14 +198,102 @@ void compute_1body_deriv_ints (const int thread_id,
 			  bs.max_l(),
 			  deriv_order);
 
-  // nuclear attraction ints engine
-  if (obtype == libint2::Operator::nuclear){
-    vector<pair<double, array<double,3>>> q;
-    for (const auto& atom : atoms){
-      q.push_back( {static_cast<double> (atom.atomic_number), {{atom.x, atom.y, atom.z}}} );
+  auto shell2bf = bs.shell2bf();
+  auto shell2atom = bs.shell2atom(atoms);
+  
+  for (auto s1 = 0, s12 = 0; s1 != nshl; ++s1){
+    auto bf1  = shell2bf[s1];
+    auto nbf1 = bs[s1].size();
+    auto at1  = shell2atom[s1];
+    
+    assert (at1 != -1);
+    
+    for (auto s2 = 0; s2 <= s1; ++s2, ++s12){
+
+      if (s12 % num_threads != thread_id) continue;
+      
+      auto bf2  = shell2bf[s2];
+      auto nbf2 = bs[s2].size();
+      auto at2  = shell2atom[s2];
+      
+      auto nbf12 = nbf1*nbf2;
+      
+      const auto* buf = engine.compute (bs[s1], bs[s2]);
+      
+      assert(deriv_order == 1);
+      
+      // 1. Process derivatives with respect to the Gaussian origins first
+      //
+      for (unsigned int d=0; d != 6; ++d){ // 2 centers x 3 axes = 6 cartesian geometric derivatives
+	
+	auto iat = d < 3 ? at1 : at2;
+	auto op_start = (3*iat + d%3)*nopers;
+	auto op_fence = op_start + nopers;
+	
+	for (unsigned int op = op_start; op != op_fence; ++op, buf += nbf12) {
+
+	  for (auto ib = 0, ij = 0; ib < nbf1; ib++)
+	    for (auto jb = 0; jb < nbf2; jb++, ij++) {
+	      const auto val = buf[ij];
+
+	      grd(op) += Dm(bf1+ib,bf2+jb)*val;
+	      
+	      if (s1 != s2) {
+		grd(op) += Dm(bf2+jb,bf1+ib)*val;
+	      }
+	      
+	    }
+	}
+	
+      }
+      
     }
-    engine.set_params(q);
   }
+
+}
+
+
+
+void compute_1body_deriv_nuclear (const int thread_id,
+				  const BasisSet& bs,
+				  const vector<Atom>& atoms,
+				  const arma::mat& Dm,
+				  const vector<QAtom>& atoms_Q,
+				  arma::vec& grd,
+				  arma::vec& grd_Q)
+{
+  const auto nshl = bs.size();
+  const auto nbf  = bs.nbf();
+  const auto natom = atoms.size();
+  const auto natom_Q = atoms_Q.size();
+
+  const unsigned deriv_order = 1;
+  constexpr auto nopers = libint2::operator_traits<Operator::nuclear>::nopers;
+
+  const auto nresults = nopers * libint2::num_geometrical_derivatives (natom, deriv_order);
+
+  grd   = arma::vec(nresults, arma::fill::zeros);
+  grd_Q = arma::vec(atoms_Q.size()*3, arma::fill::zeros);
+  
+  libint2::Engine engine (Operator::nuclear,
+			  bs.max_nprim(),
+			  bs.max_l(),
+			  deriv_order);
+
+  // nuclear attraction ints engine
+  vector<pair<double, array<double,3>>> q;
+  for (const auto& atom : atoms){
+    q.push_back( {static_cast<double> (atom.atomic_number), 
+	  {{atom.x, atom.y, atom.z}}} );
+  }
+
+  for (auto iq = 0; iq < natom_Q; ++iq) {
+    q.push_back ( {atoms_Q[iq].charge,
+	  {{atoms_Q[iq].x, atoms_Q[iq].y, atoms_Q[iq].z}}} );
+  }
+  
+  engine.set_params(q);
+  
   
   auto shell2bf = bs.shell2bf();
   auto shell2atom = bs.shell2atom(atoms);
@@ -247,42 +345,69 @@ void compute_1body_deriv_ints (const int thread_id,
       }
       
       // 2. Process derivatives of nuclear Coulomb operators,
-      if (obtype == libint2::Operator::nuclear){
-	for (unsigned int iat = 0; iat != natom; ++iat) {
-	  for (unsigned int ixyz = 0; ixyz != 3; ++ixyz) {
+      for (unsigned int iat = 0; iat != natom; ++iat) {
+	for (unsigned int ixyz = 0; ixyz != 3; ++ixyz) {
 	    
-	    auto op_start = (3*iat + ixyz) * nopers;
-	    auto op_fence = op_start + nopers;
+	  auto op_start = (3*iat + ixyz) * nopers;
+	  auto op_fence = op_start + nopers;
 	    
-	    for (unsigned int op = op_start;
-		 op != op_fence;
-		 ++op, buf += nbf12) {
+	  for (unsigned int op = op_start;
+	       op != op_fence;
+	       ++op, buf += nbf12) {
 	      
-	      for (auto ib = 0, ij = 0; ib < nbf1; ib++)
-		for (auto jb = 0; jb < nbf2; jb++, ij++) {
-		  const double val = buf[ij];
-		  
-		  grd(op) += Dm(bf1+ib,bf2+jb)*val;
-		  if (s1 != s2) 
-		    grd(op) += Dm(bf2+jb,bf1+ib)*val;
-		  
-		}
-	    }
+	    for (auto ib = 0, ij = 0; ib < nbf1; ib++)
+	      for (auto jb = 0; jb < nbf2; jb++, ij++) {
+		const double val = buf[ij];
+		
+		grd(op) += Dm(bf1+ib,bf2+jb)*val;
+		if (s1 != s2) 
+		  grd(op) += Dm(bf2+jb,bf1+ib)*val;
+		
+	      }
 	  }
 	}
-      }
+      } // iat =
+
+      for (unsigned int iq = 0; iq != natom_Q; ++iq) {
+	for (unsigned int ixyz = 0; ixyz != 3; ++ixyz) {
+	    
+	  auto op_start = (3*iq + ixyz) * nopers;
+	  auto op_fence = op_start + nopers;
+	    
+	  for (unsigned int op = op_start;
+	       op != op_fence;
+	       ++op, buf += nbf12) {
+	      
+	    for (auto ib = 0, ij = 0; ib < nbf1; ib++)
+	      for (auto jb = 0; jb < nbf2; jb++, ij++) {
+		const double val = buf[ij];
+		
+		grd_Q(op) += Dm(bf1+ib,bf2+jb)*val;
+		if (s1 != s2) 
+		  grd_Q(op) += Dm(bf2+jb,bf1+ib)*val;
+		
+	      }
+	  }
+	}
+      } // iQ =
+
+      
     }
+  
   }
 
 }
 
 
 
-arma::vec compute_nuclear_gradient (const vector<Atom>& atoms)
+arma::vec compute_nuclear_gradient (const vector<Atom>& atoms,
+				    const vector<QAtom>& atoms_Q,
+				    arma::vec& grd_Q)
 {
-
   arma::vec grd (3*atoms.size(), arma::fill::zeros);
-
+  if (atoms_Q.size() > 0) 
+    grd_Q.zeros();
+  
   for (auto i = 0; i < atoms.size(); ++i) {
     double chg_i = (double)atoms[i].atomic_number;
     double xi = atoms[i].x;
@@ -313,6 +438,34 @@ arma::vec compute_nuclear_gradient (const vector<Atom>& atoms)
       grd(3*j+1) += tmp(1);
       grd(3*j+2) += tmp(2);
     }
+
+
+    for (auto j = 0; j < atoms_Q.size(); ++j) {
+      double chg_j = atoms_Q[j].charge;
+      // calculate distance
+      
+      double dx = xi - atoms_Q[j].x;
+      double dy = yi - atoms_Q[j].y;
+      double dz = zi - atoms_Q[j].z;
+  
+      double rij2 = dx*dx + dy*dy + dz*dz;
+      double rij3 = sqrt(rij2)*rij2;
+
+      arma::vec tmp(3);
+      
+      tmp(0) = chg_i*chg_j/rij3*dx;
+      tmp(1) = chg_i*chg_j/rij3*dy;
+      tmp(2) = chg_i*chg_j/rij3*dz;
+
+      grd(3*i  ) -= tmp(0);
+      grd(3*i+1) -= tmp(1);
+      grd(3*i+2) -= tmp(2);
+
+      grd_Q(3*j  ) += tmp(0);
+      grd_Q(3*j+1) += tmp(1);
+      grd_Q(3*j+2) += tmp(2);
+    }
+    
   }
 
   return grd;

@@ -23,8 +23,14 @@ public:
 	   const int qm_chg = 0,
 	   const bool l_print = true,
 	   const std::vector<QAtom>& atoms_Q = std::vector<QAtom>() );
+
+  arma::vec get_rhf_grad ()   { return m_grad;}
+  arma::vec get_rhf_grad_Q () { return m_grad_Q;}
   
-  arma::vec grad;
+private:
+  
+  arma::vec m_grad;
+  arma::vec m_grad_Q;
   
 };
 
