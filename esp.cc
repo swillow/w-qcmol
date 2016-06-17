@@ -97,11 +97,13 @@ void esp_esp (const int thread_id,
   const auto nshells = bs.size();
   const auto nbf     = bs.nbf();
   
-  libint2::OneBodyEngine engine (libint2::OneBodyEngine::nuclear,
-				 bs.max_nprim(),
-				 bs.max_l(),
-				 0);
+  libint2::Engine engine (libint2::Operator::nuclear,
+			  bs.max_nprim(),
+			  bs.max_l(),
+			  0);
 
+  const auto& buf = engine.results();
+  
   const auto shell2bf = bs.shell2bf ();
 
   arma::mat Vm(nbf,nbf);
@@ -131,11 +133,12 @@ void esp_esp (const int thread_id,
 	auto bf2 = shell2bf[s2];
 	auto nbf2 = bs[s2].size();
 	
-	const auto* buf = engine.compute (bs[s1], bs[s2]);
+	engine.compute (bs[s1], bs[s2]);
+	const auto* buf0 = buf[0];
 	
 	for (auto ib = 0, ij = 0; ib < nbf1; ib++) {
 	  for (auto jb = 0; jb < nbf2; jb++, ij++) {
-	    const double val = buf[ij];
+	    const double val = buf0[ij];
 	    Vm(bf1+ib,bf2+jb) = val;
 	    Vm(bf2+jb,bf1+ib) = val;
 	  }

@@ -51,7 +51,6 @@ Integrals::Integrals (const vector<Atom>& atoms,
 		      const vector<QAtom>& Q_atoms)
 {
   num_threads = std::thread::hardware_concurrency ();
-
   //cout << "NUM THREAD " << num_threads << endl;
   
   if (num_threads == 0)
@@ -85,7 +84,7 @@ Integrals::Integrals (const vector<Atom>& atoms,
     t_T[id].join();
     t_V[id].join();
   }
-  
+
   Sm = St[0];
   Tm = Tt[0];
   Vm = Vt[0];
@@ -108,6 +107,7 @@ Integrals::Integrals (const vector<Atom>& atoms,
     t_K[id] = std::thread (compute_schwartz_ints,
 			   id, std::cref(bs), std::ref(Kt[id])); 
   }
+  
   // Join
   for (auto id = 0; id < num_threads; ++id) {
     t_K[id].join();
@@ -142,6 +142,7 @@ Integrals::Integrals (const vector<Atom>& atoms,
     for (auto id = 1; id < num_threads; ++id) {
       eri_t[0] += eri_t[id];
     }
+
     TEI = eri_t[0];
     
   }
@@ -184,6 +185,8 @@ void compute_1body_ints (const int thread_id,
     engine.set_params (q);
   }
   
+  const auto& buf = engine.results();
+  
   auto shell2bf = bs.shell2bf();
 
   // Loop over unique shell pairs, {s1, s2} such that s1 >= s2
@@ -201,11 +204,12 @@ void compute_1body_ints (const int thread_id,
       auto nbf2  = bs[s2].size(); //shells[s2].size ();
 
       // compute shell pair; return is the pointer to the buffer
-      const auto* buf = engine.compute (bs[s1], bs[s2]);
-
+      engine.compute (bs[s1], bs[s2]);
+      const auto* buf0 = buf[0];
+      
       for (auto ib = 0, ij = 0; ib < nbf1; ib++) 
 	for (auto jb = 0; jb < nbf2; jb++, ij++) {
-	  const double val = buf[ij];
+	  const double val = buf0[ij];
 	    
 	  result(bf1+ib,bf2+jb) = val;
 	  result(bf2+jb,bf1+ib) = val;
@@ -270,7 +274,6 @@ void compute_schwartz_ints (const int thread_id,
 {
 
   const auto nsh   = bs.size();
-  const auto nsize = (nsh*(nsh+1))/2;
 
   result = arma::mat (nsh, nsh);
   result.zeros();
@@ -283,6 +286,7 @@ void compute_schwartz_ints (const int thread_id,
   
   const auto precision = numeric_limits<double>::epsilon();
   engine.set_precision(precision);
+  const auto& buf = engine.results();
   
   auto shell2bf = bs.shell2bf();
   
@@ -296,20 +300,23 @@ void compute_schwartz_ints (const int thread_id,
       
       auto nbf2 = bs[s2].size();
       auto nbf12 = nbf1*nbf2;
-      
-      const auto* buf = engine.compute (bs[s1], bs[s2], bs[s1], bs[s2]);
+
+      engine.compute2<Operator::coulomb,BraKet::xx_xx,0>
+	(bs[s1], bs[s2], bs[s1], bs[s2]);
+      const auto* buf0 = buf[0];
 
       auto max_value = 0.0;
-      for (auto f1 = 0, f12 = 0; f1 < nbf1; ++f1)
-	for (auto f2 = 0; f2 < nbf2; ++f2, ++f12) {
-	  const auto eri4 = abs(buf[f12*nbf12 + f12]);
-	  const auto val  = sqrt(eri4);
 
-	  if (max_value < val) max_value = val;
-	}
-
+      if (buf0 != nullptr) {
+	
+	for (auto f1 = 0, f12 = 0; f1 < nbf1; ++f1)
+	  for (auto f2 = 0; f2 < nbf2; ++f2, ++f12) {
+	    const auto eri4 = abs(buf0[f12*nbf12 + f12]);
+	    const auto val  = sqrt(eri4);
+	    if (max_value < val) max_value = val;
+	  }
+      }
       result(s1,s2) = result(s2,s1) = max_value;
-	  
     }
   }
 
@@ -339,6 +346,7 @@ void compute_2body_ints (const int thread_id,
   
   const auto precision = numeric_limits<double>::epsilon();
   engine.set_precision(precision);
+  const auto& buf = engine.results();
   
   auto shell2bf = bs.shell2bf();
   auto nsave = 0;
@@ -346,16 +354,24 @@ void compute_2body_ints (const int thread_id,
 
   // loop over permutationally-unique set of shells
   for (auto s1 = 0, s1234 = 0; s1 != nshells; ++s1) {
+    auto bf1_first = shell2bf[s1];
+    auto nbf1      = bs[s1].size();
     
     for (auto s2 = 0; s2 <= s1; ++s2) {
       //if (s12 % num_threads != thread_id) continue;
       
       auto s12_cut   = Schwartz(s1,s2);
+      auto bf2_first = shell2bf[s2];
+      auto nbf2      = bs[s2].size();
 
       for (auto s3 = 0; s3 <= s1; ++s3) {
+	auto bf3_first = shell2bf[s3];
+	auto nbf3      = bs[s3].size();
 
 	const auto s4_max = (s1 == s3) ? s2 : s3;
 	for (auto s4 = 0; s4 <= s4_max; ++s4, ++s1234) {
+	  auto bf4_first = shell2bf[s4];
+	  auto nbf4      = bs[s4].size();
 	  auto s34_cut   = Schwartz(s3,s4);
 
 	  if (s1234 % num_threads != thread_id) continue;
@@ -365,63 +381,10 @@ void compute_2body_ints (const int thread_id,
 	    continue;
 	  }
 
-	  // swap
-	  const auto swap_bra = (bs[s1].contr[0].l < bs[s2].contr[0].l);
-	  const auto swap_ket = (bs[s3].contr[0].l < bs[s4].contr[0].l);
-	  const auto swap_braket =
-	    ((bs[s1].contr[0].l + bs[s2].contr[0].l) >
-	     (bs[s3].contr[0].l + bs[s4].contr[0].l));
-
-	  // In order to reduce a bug in engine.h
-	  auto t1 = s1;
-	  auto t2 = s2;
-	  auto t3 = s3;
-	  auto t4 = s4;
-
-	  if (swap_braket) {
-	    if (swap_ket) {
-	      t1 = s4;
-	      t2 = s3;
-	    }
-	    else {
-	      t1 = s3;
-	      t2 = s4;
-	    }
-	    if (swap_bra) {
-	      t3 = s2;
-	      t4 = s1;
-	    }
-	    else {
-	      t3 = s1;
-	      t4 = s2;
-	    }
-	  }
-	  else {
-	    if (swap_bra) {
-	      t1 = s2;
-	      t2 = s1;
-	    }
-	    if (swap_ket) {
-	      t3 = s4;
-	      t4 = s3;
-	    }
-	  }
-
-	  auto bf1_first = shell2bf[t1];
-	  auto nbf1      = bs[t1].size();
-	  
-	  auto bf2_first = shell2bf[t2];
-	  auto nbf2      = bs[t2].size();
-	  
-	  auto bf3_first = shell2bf[t3];
-	  auto nbf3      = bs[t3].size();
-	  
-	  auto bf4_first = shell2bf[t4];
-	  auto nbf4      = bs[t4].size();
-	  
 	  //const auto* buf = engine.compute (bs[s1], bs[s2], bs[s3], bs[s4]);
-	  const auto* buf = engine.compute2<Operator::coulomb,BraKet::xx_xx,0>
-	    (bs[t1], bs[t2], bs[t3], bs[t4]);
+	  engine.compute2<Operator::coulomb,BraKet::xx_xx,0>
+	    (bs[s1], bs[s2], bs[s3], bs[s4]);
+	  const auto* buf0 = buf[0];
 	  
 	  for (auto f1 = 0, f1234 = 0; f1 != nbf1; ++f1) {
 	    const auto bf1 = f1 + bf1_first;
@@ -434,7 +397,7 @@ void compute_2body_ints (const int thread_id,
 		
 		for (auto f4 = 0; f4 != nbf4; ++f4, ++f1234) {
 		  const auto bf4 = f4 + bf4_first;
-		  const auto eri4 = buf[f1234];
+		  const auto eri4 = buf0[f1234];
 		  
 		  auto ij = INDEX(bf1, bf2);
 		  auto kl = INDEX(bf3, bf4);
@@ -516,6 +479,7 @@ void compute_2body_ints_direct (const int thread_id,
 
   const auto precision = numeric_limits<double>::epsilon();
   engine.set_precision (precision);
+  const auto& buf = engine.results();
   
   auto shell2bf = bs.shell2bf();
   
@@ -562,9 +526,10 @@ void compute_2body_ints_direct (const int thread_id,
 	  auto s12_34_deg = (s1 == s3) ? (s2 == s4 ? 1.0: 2.0) : 2.0;
 	  auto s1234_deg = s12_deg*s34_deg*s12_34_deg;
 
-	  //const auto* buf = engine.compute (bs[s1], bs[s2], bs[s3], bs[s4]);
-	  const auto* buf = engine.compute2<Operator::coulomb,BraKet::xx_xx,0>
+	  //const auto* buf = engine.compute2<Operator::coulomb,BraKet::xx_xx,0>
+	  engine.compute2<Operator::coulomb,BraKet::xx_xx,0>
 	    (bs[s1], bs[s2], bs[s3], bs[s4]);
+	  const auto* buf0 = buf[0];
 	  
 	  for (auto f1 = 0, f1234 = 0; f1 != nbf1; ++f1) {
 	    const auto bf1 = f1 + bf1_first;
@@ -578,7 +543,7 @@ void compute_2body_ints_direct (const int thread_id,
 		for (auto f4 = 0; f4 != nbf4; ++f4, ++f1234) {
 		  const auto bf4 = f4 + bf4_first;
 
-		  const auto value = buf[f1234];
+		  const auto value = buf0[f1234];
 
 		  const auto value_scal_by_deg = value * s1234_deg;
 		  
@@ -617,10 +582,8 @@ arma::mat compute_2body_fock_general (const BasisSet& bs,
 
   assert( (Dm.n_cols == Dm.n_rows) && (Dm.n_cols == nbf_Dm) );
   
-  arma::mat Gm (nbf, nbf);
+  arma::mat Gm (nbf, nbf, arma::fill::zeros);
   
-  Gm.zeros();
-    
   // matrix of norms of shell blocks
 
   const auto precision = numeric_limits<double>::epsilon();
@@ -631,6 +594,7 @@ arma::mat compute_2body_fock_general (const BasisSet& bs,
 			  0);
 
   engine.set_precision (precision);
+  const auto& buf = engine.results();
   
   auto shell2bf    = bs.shell2bf();
   auto shell2bf_Dm = Dm_bs.shell2bf();
@@ -665,49 +629,57 @@ arma::mat compute_2body_fock_general (const BasisSet& bs,
 	    
 	    //const auto* buf_J = engine.compute (bs[s1], bs[s2],
 	    //					Dm_bs[s3], Dm_bs[s4]);
-	    const auto* buf_J = engine.compute2<Operator::coulomb,BraKet::xx_xx,0>
+	    engine.compute2<Operator::coulomb,BraKet::xx_xx,0>
 	      (bs[s1], bs[s2], Dm_bs[s3], Dm_bs[s4]);
-	  
-	    for (auto f1 = 0, f1234 = 0; f1 != nbf1; ++f1) {
-	      const auto bf1 = f1 + bf1_first;
-	      for (auto f2 = 0; f2 != nbf2; ++f2) {
-		const auto bf2 = f2 + bf2_first;
-		for (auto f3 = 0; f3 != nbf3; ++f3) {
-		  const auto bf3 = f3 + bf3_first;
-		  for (auto f4 = 0; f4 != nbf4; ++f4, ++f1234) {
-		    const auto bf4 = f4 + bf4_first;
-		  
-		    const auto value = buf_J[f1234];
-		    const auto value_scal_by_deg = value * s1234_deg;
 
-		    Gm(bf1,bf2) += 2.0*Dm(bf3,bf4)*value_scal_by_deg;
-		  
-		  }
-		}
-	      }
-	    } // f1
-
-	    const auto* buf_K = engine.compute2<Operator::coulomb,BraKet::xx_xx,0>
-	      (bs[s1], Dm_bs[s3], bs[s2], Dm_bs[s4]);
-
-	    for (auto f1 = 0, f1234 = 0; f1 != nbf1; ++f1) {
-	      const auto bf1 = f1 + bf1_first;
-	      for (auto f3 = 0; f3 != nbf3; ++f3) {
-		const auto bf3 = f3 + bf3_first;
+	    const auto* buf_J = buf[0];
+	    if (buf_J != nullptr) {
+	      
+	      for (auto f1 = 0, f1234 = 0; f1 != nbf1; ++f1) {
+		const auto bf1 = f1 + bf1_first;
 		for (auto f2 = 0; f2 != nbf2; ++f2) {
 		  const auto bf2 = f2 + bf2_first;
-		  for (auto f4 = 0; f4 != nbf4; ++f4, ++f1234) {
-		    const auto bf4 = f4 + bf4_first;
+		  for (auto f3 = 0; f3 != nbf3; ++f3) {
+		    const auto bf3 = f3 + bf3_first;
+		    for (auto f4 = 0; f4 != nbf4; ++f4, ++f1234) {
+		      const auto bf4 = f4 + bf4_first;
+		      
+		      const auto value = buf_J[f1234];
+		      const auto value_scal_by_deg = value * s1234_deg;
+		      
+		      Gm(bf1,bf2) += 2.0*Dm(bf3,bf4)*value_scal_by_deg;
 		  
-		    const auto value = buf_K[f1234];
-		    const auto value_scal_by_deg = value * s12_deg;
-
-		    Gm(bf1,bf2) -= Dm(bf3,bf4)*value_scal_by_deg;
-		    
+		    }
 		  }
 		}
-	      }
-	    } // f1
+	      } // f1
+	    } // end if
+	    
+	    engine.compute2<Operator::coulomb,BraKet::xx_xx,0>
+	      (bs[s1], Dm_bs[s3], bs[s2], Dm_bs[s4]);
+	    const auto* buf_K = buf[0];
+
+	    if (buf_K != nullptr) {
+	      
+	      for (auto f1 = 0, f1234 = 0; f1 != nbf1; ++f1) {
+		const auto bf1 = f1 + bf1_first;
+		for (auto f3 = 0; f3 != nbf3; ++f3) {
+		  const auto bf3 = f3 + bf3_first;
+		  for (auto f2 = 0; f2 != nbf2; ++f2) {
+		    const auto bf2 = f2 + bf2_first;
+		    for (auto f4 = 0; f4 != nbf4; ++f4, ++f1234) {
+		      const auto bf4 = f4 + bf4_first;
+		      
+		      const auto value = buf_K[f1234];
+		      const auto value_scal_by_deg = value * s12_deg;
+		      
+		      Gm(bf1,bf2) -= Dm(bf3,bf4)*value_scal_by_deg;
+		      
+		    }
+		  }
+		}
+	      } // f1
+	    } // end if buf_K
 	    
 	  } // if (s3 >= s4)
 	}

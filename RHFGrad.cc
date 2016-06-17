@@ -187,6 +187,7 @@ void compute_1body_deriv_ints (const int thread_id,
   const auto natom = atoms.size();
 
   const unsigned deriv_order = 1;
+  
   constexpr auto nopers = libint2::operator_traits<obtype>::nopers;
 
   const auto nresults = nopers * libint2::num_geometrical_derivatives (natom, deriv_order);
@@ -198,9 +199,11 @@ void compute_1body_deriv_ints (const int thread_id,
 			  bs.max_l(),
 			  deriv_order);
 
+  const auto& buf = engine.results();
+  
   auto shell2bf = bs.shell2bf();
   auto shell2atom = bs.shell2atom(atoms);
-  
+
   for (auto s1 = 0, s12 = 0; s1 != nshl; ++s1){
     auto bf1  = shell2bf[s1];
     auto nbf1 = bs[s1].size();
@@ -218,34 +221,34 @@ void compute_1body_deriv_ints (const int thread_id,
       
       auto nbf12 = nbf1*nbf2;
       
-      const auto* buf = engine.compute (bs[s1], bs[s2]);
+      engine.compute (bs[s1], bs[s2]);
       
       assert(deriv_order == 1);
       
       // 1. Process derivatives with respect to the Gaussian origins first
       //
-      for (unsigned int d=0; d != 6; ++d){ // 2 centers x 3 axes = 6 cartesian geometric derivatives
-	
+      for (unsigned int d = 0; d != 6; ++d) { // 2 centers x 3 axes
 	auto iat = d < 3 ? at1 : at2;
 	auto op_start = (3*iat + d%3)*nopers;
 	auto op_fence = op_start + nopers;
-	
-	for (unsigned int op = op_start; op != op_fence; ++op, buf += nbf12) {
+	const auto* buf_idx = buf[d];
+
+	for (unsigned int op = op_start; op != op_fence; ++op) {
 
 	  for (auto ib = 0, ij = 0; ib < nbf1; ib++)
 	    for (auto jb = 0; jb < nbf2; jb++, ij++) {
-	      const auto val = buf[ij];
-
+	      const auto val = buf_idx[ij];
+		
 	      grd(op) += Dm(bf1+ib,bf2+jb)*val;
 	      
 	      if (s1 != s2) {
 		grd(op) += Dm(bf2+jb,bf1+ib)*val;
 	      }
-	      
+		
 	    }
-	}
+	} // exit op
+      } // exit d
 	
-      }
       
     }
   }
@@ -280,6 +283,8 @@ void compute_1body_deriv_nuclear (const int thread_id,
 			  bs.max_l(),
 			  deriv_order);
 
+  const auto& buf = engine.results ();
+  
   // nuclear attraction ints engine
   vector<pair<double, array<double,3>>> q;
   for (const auto& atom : atoms){
@@ -315,7 +320,7 @@ void compute_1body_deriv_nuclear (const int thread_id,
       
       auto nbf12 = nbf1*nbf2;
       
-      const auto* buf = engine.compute (bs[s1], bs[s2]);
+      engine.compute (bs[s1], bs[s2]);
       
       assert(deriv_order == 1);
       
@@ -326,12 +331,14 @@ void compute_1body_deriv_nuclear (const int thread_id,
 	auto iat = d < 3 ? at1 : at2;
 	auto op_start = (3*iat + d%3)*nopers;
 	auto op_fence = op_start + nopers;
-	
-	for (unsigned int op = op_start; op != op_fence; ++op, buf += nbf12) {
 
+	const auto* buf_idx = buf[d];
+	
+	for (unsigned int op = op_start; op != op_fence; ++op) {
+	  
 	  for (auto ib = 0, ij = 0; ib < nbf1; ib++)
 	    for (auto jb = 0; jb < nbf2; jb++, ij++) {
-	      const auto val = buf[ij];
+	      const auto val = buf_idx[ij];
 
 	      grd(op) += Dm(bf1+ib,bf2+jb)*val;
 	      
@@ -342,22 +349,23 @@ void compute_1body_deriv_nuclear (const int thread_id,
 	    }
 	}
 	
-      }
+      } // d
       
       // 2. Process derivatives of nuclear Coulomb operators,
       for (unsigned int iat = 0; iat != natom; ++iat) {
 	for (unsigned int ixyz = 0; ixyz != 3; ++ixyz) {
 	    
+	  const auto* buf_idx = buf[6 + iat*3 + ixyz];
+	  
 	  auto op_start = (3*iat + ixyz) * nopers;
 	  auto op_fence = op_start + nopers;
 	    
 	  for (unsigned int op = op_start;
-	       op != op_fence;
-	       ++op, buf += nbf12) {
+	       op != op_fence; ++op) {
 	      
 	    for (auto ib = 0, ij = 0; ib < nbf1; ib++)
 	      for (auto jb = 0; jb < nbf2; jb++, ij++) {
-		const double val = buf[ij];
+		const double val = buf_idx[ij];
 		
 		grd(op) += Dm(bf1+ib,bf2+jb)*val;
 		if (s1 != s2) 
@@ -371,16 +379,16 @@ void compute_1body_deriv_nuclear (const int thread_id,
       for (unsigned int iq = 0; iq != natom_Q; ++iq) {
 	for (unsigned int ixyz = 0; ixyz != 3; ++ixyz) {
 	    
+	  const auto* buf_idx = buf[6 + (natom + iq)*3 + ixyz];
 	  auto op_start = (3*iq + ixyz) * nopers;
 	  auto op_fence = op_start + nopers;
 	    
 	  for (unsigned int op = op_start;
-	       op != op_fence;
-	       ++op, buf += nbf12) {
+	       op != op_fence; ++op) {
 	      
 	    for (auto ib = 0, ij = 0; ib < nbf1; ib++)
 	      for (auto jb = 0; jb < nbf2; jb++, ij++) {
-		const double val = buf[ij];
+		const double val = buf_idx[ij];
 		
 		grd_Q(op) += Dm(bf1+ib,bf2+jb)*val;
 		if (s1 != s2) 
@@ -499,78 +507,54 @@ void compute_2body_deriv_ints (const int thread_id,
   
   const auto precision = numeric_limits<double>::epsilon();
   engine.set_precision (precision);
-
+  const auto& buf = engine.results();
+  
   auto shell2bf = bs.shell2bf();
 
   // loop over permutationally-unique set of shells
   for (auto s1 = 0, s1234 = 0; s1 != nshells; ++s1) {
+    auto bf1_first = shell2bf[s1];
+    auto nbf1      = bs[s1].size();
+    auto iat       = shell2atom[s1];
     
     for (auto s2 = 0; s2 <= s1; ++s2) {
+      auto bf2_first = shell2bf[s2];
+      auto nbf2      = bs[s2].size();
+      auto jat       = shell2atom[s2];
       auto s12_cut   = Schwartz(s1,s2);
 
       for (auto s3 = 0; s3 <= s1; ++s3) {
+	auto bf3_first = shell2bf[s3];
+	auto nbf3      = bs[s3].size();
+	auto kat       = shell2atom[s3];
 
 	const auto s4_max = (s1 == s3) ? s2 : s3;
 	for (auto s4 = 0; s4 <= s4_max; ++s4, ++s1234) {
 
 	  if (s1234 % num_threads != thread_id) continue;
 	  
+	  auto bf4_first = shell2bf[s4];
+	  auto nbf4      = bs[s4].size();
+	  auto lat       = shell2atom[s4];
 	  auto s34_cut   = Schwartz(s3,s4);
 	  
 	  if (s12_cut*s34_cut < precision) {
 	    continue;
 	  }
 
-	  // swap
-	  const auto swap_bra = (bs[s1].contr[0].l < bs[s2].contr[0].l);
-	  const auto swap_ket = (bs[s3].contr[0].l < bs[s4].contr[0].l);
-	  const auto swap_braket =
-	    ((bs[s1].contr[0].l + bs[s2].contr[0].l) >
-	     (bs[s3].contr[0].l + bs[s4].contr[0].l));
-
-	  auto t1 = s1;
-	  auto t2 = s2;
-	  auto t3 = s3;
-	  auto t4 = s4;
-
-	  if (swap_bra) std::swap(t1,t2);
-	  if (swap_ket) std::swap(t3,t4);
-	  if (swap_braket) {
-	    std::swap(t1,t3);
-	    std::swap(t2,t4);
-	  }
-
-	  auto bf1_first = shell2bf[t1];
-	  auto nbf1      = bs[t1].size();
-	  auto iat       = shell2atom[t1];
-	  
-	  auto bf2_first = shell2bf[t2];
-	  auto nbf2      = bs[t2].size();
-	  auto jat       = shell2atom[t2];
-	  
-	  auto bf3_first = shell2bf[t3];
-	  auto nbf3      = bs[t3].size();
-	  auto kat       = shell2atom[t3];
-	  
-	  auto bf4_first = shell2bf[t4];
-	  auto nbf4      = bs[t4].size();
-	  auto lat       = shell2atom[t4];
-	  
 	  auto s12_deg = (s1 == s2) ? 1.0 : 2.0;
 	  auto s34_deg = (s3 == s4) ? 1.0 : 2.0;
 	  auto s13_s24_deg = (s1 == s3) ? ((s2 == s4) ? 1.0 : 2.0) : 2.0;
 	  auto s1234_deg = s12_deg*s34_deg*s13_s24_deg;
 	  
-	  engine.compute2_deriv<Operator::coulomb,BraKet::xx_xx,1>
-	    (bs[t1], bs[t2], bs[t3], bs[t4]);
+	  engine.compute2<Operator::coulomb,BraKet::xx_xx,1>
+	    (bs[s1], bs[s2], bs[s3], bs[s4]);
 
-	  arma::vec tmp(9, arma::fill::zeros);
-
+	  arma::vec tmp(12, arma::fill::zeros);
 	  
-	  for (auto di = 0; di < 9; di++) {
-	    const auto* buf =
-	      engine.compute2_deriv_target <Operator::coulomb,BraKet::xx_xx,1>
-	      (bs[t1], bs[t2], bs[t3], bs[t4], di);
+	  
+	  for (auto di = 0; di != 12; di++) {
+	    const auto shset = buf[di];
 	    
 	    double sum = 0.0;
 	    for (auto f1 = 0, f1234 = 0; f1 != nbf1; ++f1) {
@@ -585,7 +569,7 @@ void compute_2body_deriv_ints (const int thread_id,
 		  for (auto f4 = 0; f4 != nbf4; ++f4, ++f1234) {
 		    const auto bf4 = f4 + bf4_first;
 		    
-		    const auto eri4 = buf[f1234];
+		    const auto eri4  = shset[f1234];
 		    const auto value = eri4*s1234_deg;
 		    
 		    sum += 2.0*Dm(bf1,bf2)*Dm(bf3,bf4)*value;
@@ -607,12 +591,12 @@ void compute_2body_deriv_ints (const int thread_id,
 	  grd(3*jat  ) += tmp(3);
 	  grd(3*jat+1) += tmp(4);
 	  grd(3*jat+2) += tmp(5);
-	  grd(3*kat  ) -= (tmp(0)+tmp(3)+tmp(6));
-	  grd(3*kat+1) -= (tmp(1)+tmp(4)+tmp(7));
-	  grd(3*kat+2) -= (tmp(2)+tmp(5)+tmp(8));
-	  grd(3*lat  ) += tmp(6);
-	  grd(3*lat+1) += tmp(7);
-	  grd(3*lat+2) += tmp(8);
+	  grd(3*kat  ) += tmp(6);
+	  grd(3*kat+1) += tmp(7);
+	  grd(3*kat+2) += tmp(8);
+	  grd(3*lat  ) += tmp(9);
+	  grd(3*lat+1) += tmp(10);
+	  grd(3*lat+2) += tmp(11);
 
 	}
       }

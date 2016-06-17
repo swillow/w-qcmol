@@ -4,7 +4,7 @@ AR=ar
 ARFLAGS=-qs
 RANLIB=ranlib
 
-LIBINT2PATH=/usr/local/libint/2.2.0-alpha
+LIBINT2PATH=/usr/local/libint/2.2.0-beta1
 LIBINT2INCLUDES = -I$(LIBINT2PATH)/include -I$(LIBINT2PATH)/include/libint2
 
 EXECUTABLE = qcmol.x
