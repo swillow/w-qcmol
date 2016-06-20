@@ -7,13 +7,12 @@ namespace willow { namespace qcmol {
 
 // (ia|jb) = (bj|ai)
 // store (ia <= jb)
-double* MP2::mo_ints (const double* ao_tei)
+arma::vec MP2::mo_ints (const double* ao_tei)
 { // calculate (ia|jb) (iocc1:iocc2,1:ivir2,iocc1:iocc2,ivir1:ivir2)
-  const auto nints = ((nmo*(nmo+1)/2)*((nmo*(nmo+1)/2)+1)/2);
+  const auto nints = (nocc*nvir)*(nocc*nvir+1)/2;
   const auto nmod  = nbf%5;
 
-  auto result = new double[nints];
-  std::fill (result, result+nints,0.0);
+  arma::vec result (nints, arma::fill::zeros);
 
   arma::cube ao_ijk (nbf, nbf, nbf);
   arma::mat  ao_ij  (nbf, nbf);
@@ -612,8 +611,10 @@ double* MP2::mo_ints (const double* ao_tei)
     }
 
     // DONE SAVE ao_ijk toward (mu,nu|kappa,moi)
-    for (auto moa = ivir1; moa <= ivir2; moa++) {
-      auto iam = INDEX(moi,moa);
+    for (auto am = 0; am < navir; am++) {
+      auto moa = ivir1 + am;
+      auto iam = moi*nvir + am;
+      
       ao_ij.zeros();
       
       for (auto kc = 0; kc < nbf-nmod; kc += 5) {
@@ -631,10 +632,13 @@ double* MP2::mo_ints (const double* ao_tei)
 	ao_ij += cval1*ao_ijk.slice(kc);
       }
 
+      // ===
       // done ao_ij : (mu, nu | moa, moi)
-
+      // ==
       //---
-      for (auto moj = 0; moj < iocc1; moj++) {
+      // (ov|ov)
+      //
+      for (auto moj = iocc1; moj < nocc; moj++) {
 	ao_i.zeros ();
 
 	for (auto jc = 0; jc < nbf-nmod; jc += 5) {
@@ -654,9 +658,13 @@ double* MP2::mo_ints (const double* ao_tei)
 	}
 
 
-	for (auto mob = ivir1; mob <= ivir2; mob++) {
-	  auto jbm = INDEX(moj,mob);
+	for (auto bm = 0; bm < navir; bm++) {
+	  auto mob = ivir1 + bm;
+	  
+	  auto jbm = moj*nvir + bm;
 
+	  if (iam < jbm) continue;
+	  
 	  auto iajbm = INDEX(iam,jbm);
 	  
 	  auto sum = 0.0;
@@ -671,57 +679,13 @@ double* MP2::mo_ints (const double* ao_tei)
 	    sum += ao_i(ic)*Cmat(ic,mob);
 	  }
 
-	  result[iajbm] = sum;
+	  result(iajbm) = sum;
 	}
   
       }
-      
-      for (auto moj = iocc1; moj <= iocc2; moj++) {
-
-	ao_i.zeros ();
-	
-	for (auto jc = 0; jc < nbf-nmod; jc += 5) {
-	  auto cval1 = Cmat(jc,moj);
-	  auto cval2 = Cmat(jc+1,moj);
-	  auto cval3 = Cmat(jc+2,moj);
-	  auto cval4 = Cmat(jc+3,moj);
-	  auto cval5 = Cmat(jc+4,moj);
-	  ao_i += (cval1*ao_ij.col(jc) + cval2*ao_ij.col(jc+1) + 
-		   cval3*ao_ij.col(jc+2) + cval4*ao_ij.col(jc+3) +
-		   cval5*ao_ij.col(jc+4) );
-	}
-
-	for (auto jc = nbf-nmod; jc < nbf; jc++) {
-	  auto cval1 = Cmat(jc,moj);
-	  ao_i += cval1*ao_ij.col(jc);
-	}
-
-	// done ao_i : (mu, moj | moa, moi)
-	for (auto mob = ivir1; mob <= moa; mob++) {
-	  auto jbm = INDEX(moj,mob);
-	  
-	  if (jbm > iam) continue;
-
-	  auto iajbm = INDEX(iam,jbm);
-	  
-	  auto sum = 0.0;
-
-	  for (auto ic = 0; ic < nbf - nmod; ic += 5) {
-	    sum += (ao_i(ic)*Cmat(ic,mob) + ao_i(ic+1)*Cmat(ic+1,mob) +
-		    ao_i(ic+2)*Cmat(ic+2,mob) + ao_i(ic+3)*Cmat(ic+3,mob) +
-		    ao_i(ic+4)*Cmat(ic+4,mob) );
-	  }
-
-	  for (auto ic = nbf - nmod; ic < nbf; ic++) {
-	    sum += ao_i(ic)*Cmat(ic,mob);
-	  }
-
-	  result[iajbm] = sum;
-
-	}
-      }
-    }
-  }
+      //
+    } // exit (am)
+  }   // exit (moi)
 
   return result;
 

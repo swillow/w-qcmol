@@ -46,7 +46,9 @@ MP2::MP2 (const vector<Atom>& atoms,
   // active virtual  MO
   naocc = nocc - ncore;
   navir = nmo  - nocc;
+  nvir  = navir;
 
+  
   eval = eig_solver.eigenvalues();
   Cmat = eig_solver.eigenvectors();
 
@@ -82,7 +84,7 @@ MP2::MP2 (const vector<Atom>& atoms,
   auto mfos  =  0.5*fos;
   
   // MO INTS (ia|jb)
-  double* mo_tei = mo_ints(ints.TEI.memptr() );
+  arma::vec mo_tei = mo_ints(ints.TEI.memptr() );
   
   // 
   // T(im,am|jm,bm)
@@ -103,15 +105,15 @@ MP2::MP2 (const vector<Atom>& atoms,
 	  
 	  double den = eval(moi) + eval(moj) - eval(moa) - eval(mob);
 
-	  auto mia = INDEX(moi,moa);
-	  auto mjb = INDEX(moj,mob);
+	  auto mia = moi*nvir + am;
+	  auto mjb = moj*nvir + bm;
 	  auto miajb = INDEX(mia,mjb);
-	  auto mib = INDEX(moi,mob);
-	  auto mja = INDEX(moj,moa);
+	  auto mib = moi*nvir + bm;
+	  auto mja = moj*nvir + am;
 	  auto mibja = INDEX(mib,mja);
 
-	  auto o_iajb = mo_tei[miajb];
-	  auto o_ibja = mo_tei[mibja];
+	  auto o_iajb = mo_tei(miajb);
+	  auto o_ibja = mo_tei(mibja);
 	  auto t_iajb = ((fss+fos)*o_iajb - fos*o_ibja)/den;
 
 	  emp2 += t_iajb * o_iajb;

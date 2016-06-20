@@ -27,6 +27,7 @@ public:
   
 protected:
   int nocc;
+  int nvir;
   int ncore;
   int nmo;
   int nbf;
@@ -45,7 +46,7 @@ protected:
   arma::vec eval;
   arma::mat Cmat;
 
-  double*   mo_ints (const double* ao_tei);
+  arma::vec   mo_ints (const double* ao_tei);
 
   double emp2;
   double erhf;
