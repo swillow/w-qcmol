@@ -2,32 +2,26 @@
 #include "MP2.hpp"
 
 
-using namespace std;
-using namespace libint2;
 
 namespace willow { namespace qcmol {
 
 
-#define MINDEX(i,a,j,b,nocc,nvir)  ( ( ((i)*(nvir) + (a))*(nocc) + (j))*(nvir) + (b) ) 
 
-
-MP2::MP2 (const vector<Atom>& atoms,
-	  const BasisSet& bs,
+MP2::MP2 (const std::vector<libint2::Atom>& atoms,
+	  const libint2::BasisSet& bs,
 	  const Integrals& ints,
 	  const int qm_chg,
 	  const bool l_print,
-	  const vector<QAtom>& atoms_Q)
+	  const std::vector<QAtom>& atoms_Q)
   : RHF (atoms, bs, ints, qm_chg, l_print, atoms_Q)
 {
   
-  //RHF rhf (atoms, bs, ints, qm_chg, l_print, atoms_Q);
-
   erhf = rhf_energy ();
   emp2 = 0.0;
   
   if (ints.l_eri_direct) {
     if (l_print)
-      cout << "DIRECT EMP2 CALCULATION IS NOT READY. TT    "  << endl;
+      std::cout << "DIRECT EMP2 CALCULATION IS NOT READY. TT    "  << std::endl;
 
     return;
   }
@@ -53,9 +47,9 @@ MP2::MP2 (const vector<Atom>& atoms,
   Cmat = eig_solver.eigenvectors();
 
   if (l_print) {
-    cout << "nmo " << nmo << endl;
-    cout << "naocc " << naocc << endl;
-    cout << "navir " << navir << endl;
+    std::cout << "nmo " << nmo << std::endl;
+    std::cout << "naocc " << naocc << std::endl;
+    std::cout << "navir " << navir << std::endl;
   }
   
   //
@@ -64,27 +58,15 @@ MP2::MP2 (const vector<Atom>& atoms,
   //
   
   
-  fss   = 1.0;
-  fos   = 1.0;
-  bool o_mp2_scs = false;
-
-  if (o_mp2_scs) {
-    fss = 1.0/3.0;
-    fos = 1.2; // 6.0/5.0;
-  }
-
   // J = coloumb-like integral (ia|jb)
   // K = exchange-like integral (ib|ja) or (ja|ib)
   // Note Same Spin     = J - K
   // NOTE Opposite Spin = J
-  // Hence, Total En(2) = (fss+fos) J  - fss K
-  //
-  auto mhfss = -0.5*fss;
-  auto hfss  =  0.5*fss;
-  auto mfos  =  0.5*fos;
   
+  //
   // MO INTS (ia|jb)
-  arma::vec mo_tei = mo_ints(ints.TEI.memptr() );
+  arma::mat mo_hf_int = mo_half_ints (ints.TEI.memptr() );
+  arma::mat mo_tei    = mo_iajb_ints (mo_hf_int);
   
   // 
   // T(im,am|jm,bm)
@@ -94,38 +76,37 @@ MP2::MP2 (const vector<Atom>& atoms,
   for (auto im = 0; im < naocc; im++) {
     auto moi = iocc1 + im;
     
-    for (auto jm = 0; jm < naocc; jm++) {
-      auto moj = iocc1 + jm;
-    
-      for (auto bm = 0; bm < navir; bm++) {
-	auto mob = ivir1 + bm;
-
-	for (auto am = 0; am < navir; am++) {
-	  auto moa = ivir1 + am;
+    for (auto am = 0; am < navir; am++) {
+      auto moa = ivir1 + am;
+      
+      for (auto moj = iocc1; moj < nocc; moj++) {
+	
+        for (auto bm = 0; bm < navir; bm++) {
+	  auto mob = ivir1 + bm;
 	  
 	  double den = eval(moi) + eval(moj) - eval(moa) - eval(mob);
-
-	  auto mia = moi*nvir + am;
-	  auto mjb = moj*nvir + bm;
-	  auto miajb = INDEX(mia,mjb);
-	  auto mib = moi*nvir + bm;
-	  auto mja = moj*nvir + am;
-	  auto mibja = INDEX(mib,mja);
-
-	  auto o_iajb = mo_tei(miajb);
-	  auto o_ibja = mo_tei(mibja);
-	  auto t_iajb = ((fss+fos)*o_iajb - fos*o_ibja)/den;
-
+	  
+	  auto mia = im*navir + am;
+	  auto mib = im*navir + bm;
+	  
+	  auto mjb = moj*navir + bm;
+	  auto mja = moj*navir + am;
+	  
+	  auto o_iajb = mo_tei(mjb, mia);
+	  auto o_ibja = mo_tei(mja, mib);
+	  
+	  auto t_iajb = (2.0*o_iajb - o_ibja)/den;
+	  
 	  emp2 += t_iajb * o_iajb;
-
-	} // im
-
-      } // am
-    }  // jm
-  }
+	  
+	} // bm
+	
+      } // moj
+    }  // am
+  }    // im
 
   if (l_print)
-    cout << "EMP2     " << emp2 << endl;
+    std::cout << "EMP2     " << emp2 << std::endl;
 
 }
 

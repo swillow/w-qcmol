@@ -4,7 +4,7 @@ AR=ar
 ARFLAGS=-qs
 RANLIB=ranlib
 
-LIBINT2PATH=/usr/local/libint/2.2.0-beta1
+LIBINT2PATH=/usr/local/libint/2.2.0
 LIBINT2INCLUDES = -I$(LIBINT2PATH)/include -I$(LIBINT2PATH)/include/libint2
 
 EXECUTABLE = qcmol.x
@@ -15,11 +15,11 @@ HOME = .
 .SUFFIXES: .cc 
 
 
-CFLAGS = -O3 -ffast-math    -march=native -std=c++11 $(LIBINT2INCLUDES)  
+CFLAGS = -O3 -ffast-math    -march=native -std=c++11 $(LIBINT2INCLUDES)  -I/usr/include/eigen3
 #CFLAGS = -g   -march=native -std=c++11 $(LIBINT2INCLUDES)  
 LIBS =  -L$(LIBINT2PATH)/lib -lint2  -larmadillo -lblas -llapack -lpthread
 
-SRC = Integrals.cc RHF.cc RHFGrad.cc mp2ints.cc MP2.cc esp.cc 
+SRC = Integrals.cc RHF.cc RHFGrad.cc MP2ints.cc MP2.cc esp.cc 
 
 QCMOL_OBJ=$(SRC:.cc=.o)
 

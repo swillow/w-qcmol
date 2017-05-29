@@ -46,7 +46,8 @@ protected:
   arma::vec eval;
   arma::mat Cmat;
 
-  arma::vec   mo_ints (const double* ao_tei);
+  arma::mat   mo_half_ints (const double* ao_tei);
+  arma::mat   mo_iajb_ints (const arma::mat& mo_hf_int);
 
   double emp2;
   double erhf;
