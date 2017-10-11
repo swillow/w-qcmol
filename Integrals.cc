@@ -304,7 +304,7 @@ void compute_schwartz_ints (const int thread_id,
       engine.compute2<Operator::coulomb,BraKet::xx_xx,0>
 	(bs[s1], bs[s2], bs[s1], bs[s2]);
       const auto* buf0 = buf[0];
-
+      
       auto max_value = 0.0;
 
       if (buf0 != nullptr) {
@@ -385,6 +385,8 @@ void compute_2body_ints (const int thread_id,
 	  engine.compute2<Operator::coulomb,BraKet::xx_xx,0>
 	    (bs[s1], bs[s2], bs[s3], bs[s4]);
 	  const auto* buf0 = buf[0];
+
+	  if (buf0 == nullptr) continue;
 	  
 	  for (auto f1 = 0, f1234 = 0; f1 != nbf1; ++f1) {
 	    const auto bf1 = f1 + bf1_first;
@@ -526,10 +528,11 @@ void compute_2body_ints_direct (const int thread_id,
 	  auto s12_34_deg = (s1 == s3) ? (s2 == s4 ? 1.0: 2.0) : 2.0;
 	  auto s1234_deg = s12_deg*s34_deg*s12_34_deg;
 
-	  //const auto* buf = engine.compute2<Operator::coulomb,BraKet::xx_xx,0>
 	  engine.compute2<Operator::coulomb,BraKet::xx_xx,0>
 	    (bs[s1], bs[s2], bs[s3], bs[s4]);
 	  const auto* buf0 = buf[0];
+
+	  if (buf0 == nullptr) continue;
 	  
 	  for (auto f1 = 0, f1234 = 0; f1 != nbf1; ++f1) {
 	    const auto bf1 = f1 + bf1_first;
@@ -633,6 +636,7 @@ arma::mat compute_2body_fock_general (const BasisSet& bs,
 	      (bs[s1], bs[s2], Dm_bs[s3], Dm_bs[s4]);
 
 	    const auto* buf_J = buf[0];
+	    
 	    if (buf_J != nullptr) {
 	      
 	      for (auto f1 = 0, f1234 = 0; f1 != nbf1; ++f1) {
