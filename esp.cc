@@ -193,7 +193,7 @@ arma::vec ESP::esp_fit (const vector<Atom>& atoms)
     auto yi = atoms[i].y;
     auto zi = atoms[i].z;
     
-    for (auto j = 0; j < atoms.size(); ++j) {
+    for (auto j = i; j < atoms.size(); ++j) {
       auto xj = atoms[j].x;
       auto yj = atoms[j].y;
       auto zj = atoms[j].z;
