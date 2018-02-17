@@ -16,16 +16,121 @@ MP2::MP2 (const std::vector<libint2::Atom>& atoms,
   : RHF (atoms, bs, ints, qm_chg, l_print, atoms_Q)
 {
   
+  if (ints.l_eri_direct) {
+    compute_direct (atoms, bs, ints, qm_chg, l_print, atoms_Q);
+  }
+  else {
+    compute_default(atoms, bs, ints, qm_chg, l_print, atoms_Q);
+  }
+}
+
+
+
+void MP2::compute_direct (const std::vector<libint2::Atom>& atoms,
+			  const libint2::BasisSet& bs,
+			  const Integrals& ints,
+			  const int qm_chg,
+			  const bool l_print,
+			  const std::vector<QAtom>& atoms_Q)
+{
   erhf = rhf_energy ();
   emp2 = 0.0;
   
-  if (ints.l_eri_direct) {
-    if (l_print)
-      std::cout << "DIRECT EMP2 CALCULATION IS NOT READY. TT    "  << std::endl;
+  nocc   = get_nocc();
+  ncore  = compute_ncore(atoms);
+  nbf    = ints.SmInvh.n_rows;
+  nmo    = ints.SmInvh.n_cols; 
 
-    return;
+  iocc1  = ncore;
+  iocc2  = nocc - 1;
+  ivir1  = nocc;
+  ivir2  = nmo - 1;
+
+  // active occupied MO
+  // active virtual  MO
+  naocc = nocc - ncore;
+  navir = nmo  - nocc;
+  nvir  = navir;
+
+  
+  eval = eig_solver.eigenvalues();
+  Cmat = eig_solver.eigenvectors();
+  
+  if (l_print) {
+    std::cout << "nmo " << nmo << std::endl;
+    std::cout << "naocc " << naocc << std::endl;
+    std::cout << "navir " << navir << std::endl;
   }
+  
+  // 
+  // T(im,am|jm,bm)
+  // 2*(im,am|jm,bm) - (im,bm|jm,am)
+  //
+  
+  for (auto im = 0; im < naocc; im++) {
+    auto moi = iocc1 + im;
+    if (l_print) std::cout << "MOI " << moi << " START \n";
+    //
+    // save (moa | moj mob)
+    // E(2) = sum_{i,j,a,b} {2 (ia | jb)(ia | jb) - (ia|jb)(ib|ja)}
+    //
+    // MO INTS (ia|jb)
+    arma::mat mo_hf_int = mo_half_ints_direct (im, bs, ints.Km);
+    arma::mat mo_tei    = mo_iajb_ints_direct (mo_hf_int);
+    
+    for (auto am = 0; am < navir; am++) {
+      auto moa = ivir1 + am;
+      
+      for (auto moj = iocc1; moj < nocc; moj++) {
+	
+        for (auto bm = 0; bm < navir; bm++) {
+	  auto mob = ivir1 + bm;
+	  
+	  double den = eval(moi) + eval(moj) - eval(moa) - eval(mob);
+	  
+	  //auto mia = im*navir + am;
+	  //auto mib = im*navir + bm;
+	  
+	  auto mjb = moj*navir + bm;
+	  auto mja = moj*navir + am;
+	  
+	  auto o_iajb = mo_tei(mjb, am);
+	  auto o_ibja = mo_tei(mja, bm);
+	  
+	  auto t_iajb = (2.0*o_iajb - o_ibja)/den;
+	  
+	  emp2 += t_iajb * o_iajb;
+/*	  std::cout << "(im,am,jm,bm) "
+		    << im << "   "
+		    << am << "   "
+		    << moj << "   "
+		    << bm << "   "
+		    << o_iajb << "   "
+		    << o_ibja << std::endl;
+*/
+	} // bm
+	
+      } // moj
+    }  // am
+  }    // im
 
+  if (l_print)
+    std::cout << "EMP2     " << emp2 << std::endl;
+
+  
+}
+
+
+void MP2::compute_default (const std::vector<libint2::Atom>& atoms,
+			   const libint2::BasisSet& bs,
+			   const Integrals& ints,
+			   const int qm_chg,
+			   const bool l_print,
+			   const std::vector<QAtom>& atoms_Q)
+{
+  erhf = rhf_energy ();
+  emp2 = 0.0;
+  
   nocc   = get_nocc();
   ncore  = compute_ncore(atoms);
   nbf    = ints.SmInvh.n_rows;
@@ -67,6 +172,7 @@ MP2::MP2 (const std::vector<libint2::Atom>& atoms,
   // MO INTS (ia|jb)
   arma::mat mo_hf_int = mo_half_ints (ints.TEI.memptr() );
   arma::mat mo_tei    = mo_iajb_ints (mo_hf_int);
+
   
   // 
   // T(im,am|jm,bm)
@@ -98,7 +204,15 @@ MP2::MP2 (const std::vector<libint2::Atom>& atoms,
 	  auto t_iajb = (2.0*o_iajb - o_ibja)/den;
 	  
 	  emp2 += t_iajb * o_iajb;
-	  
+	  /*
+	  std::cout << "(im,am,jm,bm) "
+		    << im << "   "
+		    << am << "   "
+		    << moj << "   "
+		    << bm << "   "
+		    << o_iajb << "   "
+		    << o_ibja << std::endl;
+	  */
 	} // bm
 	
       } // moj

@@ -46,9 +46,29 @@ protected:
   arma::vec eval;
   arma::mat Cmat;
 
+  void compute_default (const std::vector<libint2::Atom>& atoms,
+			const libint2::BasisSet& bs,
+			const Integrals& ints,
+			const int qm_chg = 0,
+			const bool l_print = true,
+			const std::vector<QAtom>& atoms_Q = std::vector<QAtom> ());
+  
+  void compute_direct  (const std::vector<libint2::Atom>& atoms,
+			const libint2::BasisSet& bs,
+			const Integrals& ints,
+			const int qm_chg = 0,
+			const bool l_print = true,
+			const std::vector<QAtom>& atoms_Q = std::vector<QAtom> ());
+  
   arma::mat   mo_half_ints (const double* ao_tei);
+  
   arma::mat   mo_iajb_ints (const arma::mat& mo_hf_int);
 
+  arma::mat   mo_half_ints_direct (const int im,
+				   const libint2::BasisSet& bs,
+				   const arma::mat& Schwartz);
+  
+  arma::mat   mo_iajb_ints_direct (const arma::mat& mo_hf_int);
   double emp2;
   double erhf;
   
