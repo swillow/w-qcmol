@@ -232,6 +232,7 @@ void compute_1body_deriv_ints (const int thread_id,
 	auto op_start = (3*iat + d%3)*nopers;
 	auto op_fence = op_start + nopers;
 	const auto* buf_idx = buf[d];
+	if (buf_idx == nullptr) continue;
 
 	for (unsigned int op = op_start; op != op_fence; ++op) {
 
@@ -333,6 +334,7 @@ void compute_1body_deriv_nuclear (const int thread_id,
 	auto op_fence = op_start + nopers;
 
 	const auto* buf_idx = buf[d];
+	if (buf_idx == nullptr) continue;
 	
 	for (unsigned int op = op_start; op != op_fence; ++op) {
 	  
@@ -555,7 +557,9 @@ void compute_2body_deriv_ints (const int thread_id,
 	  
 	  for (auto di = 0; di != 12; di++) {
 	    const auto shset = buf[di];
-	    
+
+	    if (shset == nullptr) continue;
+
 	    double sum = 0.0;
 	    for (auto f1 = 0, f1234 = 0; f1 != nbf1; ++f1) {
 	      const auto bf1 = f1 + bf1_first;
